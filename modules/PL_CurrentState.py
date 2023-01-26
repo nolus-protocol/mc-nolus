@@ -1,18 +1,5 @@
 import numpy as np
-import control as ctrl
 import pandas as pd
-
-
-def Generate_opened_daily_count(Kp,T1,T2,T3,T4,stnum,stden,days):
-    #s = ctrl.tf('s')
-    #sys = (T1*s + 1)/(T2*s^2 + T3*s + T4())
-    sys = ctrl.tf([T1, 1],[T2,T3,T4])
-    yout,time = ctrl.matlab.step(sys)
-    disc = ctrl.c2d(sys, stnum/stden)
-    yout,time = ctrl.matlab.step(disc,stden)
-    new_LS_opened_daily_count = pd.DataFrame({"Day":range(days),"Count":yout[:days]})
-    new_LS_opened_daily_count["Count"] = new_LS_opened_daily_count["Count"]*Kp
-    return new_LS_opened_daily_count
 
 def PL_State_ini(MP_Asset):
     timestamp = MP_Asset.drop_duplicates(subset=["MP_timestamp"], keep="last")
@@ -96,8 +83,7 @@ def PL_State_finalize(nolus_price,PL_State, LP_Pool_state, LS_Opening, LS_Repaym
                                                "PL_IN_LS_rep_prev_interest_stable"] + PL_State[
                                                "PL_IN_LS_rep_prev_margin_stable"]
 
-    LS_Closing["SYS_PL_OUT_LS_cltr_amnt_stable"] = (LS_Closing["LS_cltr_amnt_asset"] - LS_Closing[
-        "SYS_LS_cltr_amnt_taken"]) * LS_Closing["SYS_LS_cltr_price"]
+    LS_Closing["SYS_PL_OUT_LS_cltr_amnt_stable"] = LS_Closing["LS_cltr_amnt_out"]
     #todo: divide by symbol_digit_for_cltr
     a = LS_Closing[["LS_timestamp", "SYS_PL_OUT_LS_cltr_amnt_stable"]].groupby("LS_timestamp").sum().reset_index()
     PL_State["PL_OUT_LS_cltr_amnt_stable"] = PL_State["PL_timestamp"].map(dict(a.values))

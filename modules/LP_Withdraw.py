@@ -31,7 +31,7 @@ def lpw_timestamp(LP_Deposit, basis, args):
         timestamp["Duration"] = d
         timestamp["Duration"] = timestamp["Duration"] * month
         timestamp["LP_timestamp"] = timestamp["LP_timestamp"] + timestamp["Duration"]
-        timestamp["LP_timestamp"] = timestamp["LP_timestamp"].apply(datetime.datetime.fromtimestamp)
+        timestamp["LP_timestamp"] = timestamp["LP_timestamp"].apply(datetime.date.fromtimestamp)
         timestamp = timestamp.drop("Duration", axis=1)
     if basis == "day":
         duration = LP_Deposit["SYS_LP_expected_duration"].values
@@ -60,7 +60,7 @@ def lpw_timestamp(LP_Deposit, basis, args):
         timestamp["Duration"] = d
         timestamp["Duration"] = timestamp["Duration"] * day
         timestamp["LP_timestamp"] = timestamp["LP_timestamp"] + timestamp["Duration"]
-        timestamp["LP_timestamp"] = timestamp["LP_timestamp"].apply(datetime.datetime.fromtimestamp)
+        timestamp["LP_timestamp"] = timestamp["LP_timestamp"].apply(datetime.date.fromtimestamp)
         timestamp = timestamp.drop("Duration", axis=1)
 
     return timestamp
@@ -74,15 +74,11 @@ def LP_Withdraw_generate(LP_Deposit, pool_id, args):
     LP_Withdraw["LP_withdraw_idx"] = lp_dep_idx
     # withdraw = Deposit*expected_duration, last means it gets closed in the end of the duration
     # generated rows could be later used for change in the ammount during the expected_duration
-    SYS_LP_Withdraw = pd.DataFrame(lpw_timestamp(LP_Deposit, "day", args))
-    lp_dep_h = [s for s in range(100, 100 + len(SYS_LP_Withdraw))]
-    lp_dep_idx = lp_dep_h
-    SYS_LP_Withdraw["LP_withdraw_height"] = lp_dep_h
-    SYS_LP_Withdraw["LP_withdraw_idx"] = lp_dep_idx
+    SYS_LP_Withdraw = pd.DataFrame(data= None, columns=LP_Withdraw.columns)
 
     LP_Withdraw = LP_Withdraw.drop_duplicates(subset=["LP_address_id"], keep="last", ignore_index=True)
     LP_Withdraw["LP_deposit_close"] = True
     SYS_LP_Withdraw[["LP_amnt_stable", "LP_interest", "LP_interest_amnt"]] = 0
     LP_Withdraw["LP_amnt_stable"] = 0
-
-    return LP_Withdraw, SYS_LP_Withdraw
+    LP_Deposit["SYS_end_date"] = LP_Withdraw["LP_timestamp"]
+    return LP_Deposit,LP_Withdraw, SYS_LP_Withdraw

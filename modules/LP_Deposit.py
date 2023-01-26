@@ -32,8 +32,8 @@ def LP_Deposit_Generate(MP_Asset, pool_id, args):
     MP_Asset = MP_Asset.rename(columns={"MP_timestamp": "LP_timestamp", "MP_asset_symbol": "LP_symbol"})
     LP_Deposit = pd.merge(LP_Deposit, MP_Asset, on=["LP_timestamp", "LP_symbol"], how='left')
 
-    LP_Deposit["LP_amnt_asset"] = LP_Deposit["LP_amnt_asset"].multiply(10 ** LP_Deposit["digit"]).astype("uint64")
-    LP_Deposit["MP_price_in_stable"] = LP_Deposit["MP_price_in_stable"].div(10 ** LP_Deposit["digit"])
+    #LP_Deposit["LP_amnt_asset"] = LP_Deposit["LP_amnt_asset"].multiply(10 ** LP_Deposit["digit"]).astype("uint64")
+    #LP_Deposit["MP_price_in_stable"] = LP_Deposit["MP_price_in_stable"].div(10 ** LP_Deposit["digit"])
     LP_Deposit.loc[(LP_Deposit["LP_symbol"] == args["currency_stable"]), 'MP_price_in_stable'] = 1
 
     LP_Deposit["LP_amnt_stable"] = LP_Deposit["LP_amnt_asset"] * LP_Deposit["MP_price_in_stable"]

@@ -33,7 +33,7 @@ def MP_Assets_Download(args):
         df_all = df_all.interpolate(method="linear")
         # chanege unix date to real date
         df_all["MP_timestamp"] = df_all["MP_timestamp"].apply(lambda x: x / 1000)
-        df_all["MP_timestamp"] = df_all["MP_timestamp"].apply(datetime.datetime.fromtimestamp)
+        df_all["MP_timestamp"] = df_all["MP_timestamp"].apply(datetime.date.fromtimestamp)
         # cut last x days
         df_all = df_all[-days:-1]
         mp_all = mp_all.append(df_all, ignore_index="True", verify_integrity="True")
@@ -103,23 +103,22 @@ def MP_Assets_Daily(args):
     MP_Asset_State = pd.concat([MP_Asset_State, not_transforming], ignore_index=True)
 
     # convert all prices to int
-
-    ls = pd.DataFrame(args["symbol_digit"])
-    ls = ls.rename(columns={"symbol": "MP_asset_symbol"})
-    MP_Asset["digit"] = ls.loc[ls["MP_asset_symbol"] == args["currency_stable"]]["digit"].values[
-        0]  # pd.merge(MP_Asset, ls, on='MP_asset_symbol', how="left")
-    MP_Asset_State["digit"] = ls.loc[ls["MP_asset_symbol"] == args["currency_stable"]]["digit"].values[
-        0]  # pd.merge(MP_Asset_State, ls, on='MP_asset_symbol', how="left")
-
-    MP_Asset_State[["MP_price_open", "MP_price_high", "MP_price_low", "MP_price_close"]] = MP_Asset_State[
-        ["MP_price_open", "MP_price_high", "MP_price_low", "MP_price_close"]].multiply(10 ** MP_Asset_State["digit"],
-                                                                                       axis="index")  # .round(0).astype(int)
-    MP_Asset_State = MP_Asset_State.drop(["digit"], axis=1)
-    MP_Asset[["MP_price_in_stable"]] = MP_Asset[["MP_price_in_stable"]].multiply(10 ** MP_Asset["digit"],
-                                                                                 axis="index").round(0).astype("uint64")
-    MP_Asset = MP_Asset.drop(["digit"], axis=1)
-
-    MP_Asset_State[["MP_volume", "MP_marketcap"]] = MP_Asset_State[["MP_volume", "MP_marketcap"]].astype("uint64")
+    # ls = pd.DataFrame(args["symbol_digit"])
+    # ls = ls.rename(columns={"symbol": "MP_asset_symbol"})
+    # MP_Asset["digit"] = ls.loc[ls["MP_asset_symbol"] == args["currency_stable"]]["digit"].values[
+    #   0]  # pd.merge(MP_Asset, ls, on='MP_asset_symbol', how="left")
+    # MP_Asset_State["digit"] = ls.loc[ls["MP_asset_symbol"] == args["currency_stable"]]["digit"].values[
+    #    0]  # pd.merge(MP_Asset_State, ls, on='MP_asset_symbol', how="left")
+    #
+    # MP_Asset_State[["MP_price_open", "MP_price_high", "MP_price_low", "MP_price_close"]] = MP_Asset_State[
+    #    ["MP_price_open", "MP_price_high", "MP_price_low", "MP_price_close"]].multiply(10 ** MP_Asset_State["digit"],
+    #                                                                                  axis="index")  # .round(0).astype(int)
+    # MP_Asset_State = MP_Asset_State.drop(["digit"], axis=1)
+    # MP_Asset[["MP_price_in_stable"]] = MP_Asset[["MP_price_in_stable"]].multiply(10 ** MP_Asset["digit"],
+    #                                                                             axis="index").round(0).astype("uint64")
+    # MP_Asset = MP_Asset.drop(["digit"], axis=1)
+    #
+    # MP_Asset_State[["MP_volume", "MP_marketcap"]] = MP_Asset_State[["MP_volume", "MP_marketcap"]].astype("uint64")
     MP_Asset.to_csv("MP_ASSET.csv")
     MP_Asset_State.to_csv("MP_ASSET_STATE.csv")
     return MP_Asset, MP_Asset_State

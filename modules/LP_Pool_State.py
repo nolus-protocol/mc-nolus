@@ -16,8 +16,8 @@ def LP_Pool_State_gen(LP_Pool,min_timestamp,args):
                          "LP_Pool_total_borrowed_asset": np.repeat(0, len(LP_Pool)),
                          "LP_Pool_total_yield_stable": np.repeat(0, len(LP_Pool)),
                          "LP_Pool_total_yield_asset": np.repeat(0, len(LP_Pool)),
-                         "SYS_LP_Pool_TV_IntDep_stable": np.repeat((args["startup_pool_value"] * 10 ** c), len(LP_Pool)),
-                         "LP_Pool_total_deposited_stable": np.repeat((args["startup_pool_value"] * 10 ** c), len(LP_Pool)),
+                         "SYS_LP_Pool_TV_IntDep_stable": np.repeat((args["startup_pool_value"]), len(LP_Pool)),
+                         "LP_Pool_total_deposited_stable": np.repeat((args["startup_pool_value"]), len(LP_Pool)),
                          "LP_Pool_total_deposited_asset": np.repeat(0, len(LP_Pool)),
                          "SYS_LS_interest": np.repeat(0, len(LP_Pool)),
                          "SYS_LS_Pool_interest": np.repeat(0, len(LP_Pool)),
@@ -128,6 +128,6 @@ def calculate_borrowed_tvl(repayment_sum,liquidation_sum,withdraw_sum,repayment_
     pool_interest_value = lpps[["LP_Pool_id", "SYS_LS_Pool_interest"]].reset_index(drop=True)
     lpps["SYS_LP_Pool_TV_IntDep_stable"] =deposited["SYS_LP_Pool_TV_IntDep_stable"] + pool_interest_value[
                                                         "SYS_LS_Pool_interest"] - (
-                                                        deposited["LP_Pool_id"].map(withdraw_sum))
+                                                        deposited["LP_Pool_id"].map(withdraw_sum))# - (deposited["LP_Pool_id"].map(dict(borrowed[["LP_Pool_id", "LP_Pool_total_borrowed_stable"]].values)))
     #LP_Pool_State.loc[cond, ["SYS_LP_Pool_TV_IntDep_stable"]] = LP_Pool_State.loc[cond, "LP_Pool_id"].map(dict(sum_deposited.values))
     return lpps

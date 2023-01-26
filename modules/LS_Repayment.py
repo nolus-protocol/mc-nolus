@@ -28,7 +28,7 @@ def lsr_timestamp(LS_Opening, args):
     timestamp["Duration"] = d
     timestamp["Duration"] = timestamp["Duration"] * month
     timestamp["LS_timestamp"] = timestamp["LS_timestamp"] + timestamp["Duration"]
-    timestamp["LS_timestamp"] = timestamp["LS_timestamp"].apply(datetime.datetime.fromtimestamp)
+    timestamp["LS_timestamp"] = timestamp["LS_timestamp"].apply(datetime.date.fromtimestamp)
     timestamp = timestamp.drop("Duration", axis=1)
 
     return timestamp

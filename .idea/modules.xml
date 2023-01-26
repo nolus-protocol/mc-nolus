@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/mc-nolus.iml" filepath="$PROJECT_DIR$/.idea/mc-nolus.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/Nolus_MC.iml" filepath="$PROJECT_DIR$/.idea/Nolus_MC.iml" />
     </modules>
   </component>
 </project>

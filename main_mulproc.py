@@ -16,7 +16,7 @@ from modules.TR_State import TR_State_ini
 from modules.TR_Rewards_Distribution import TR_Rewards_Distribution_ini
 from modules.PL_CurrentState import PL_State_finalize
 from modules.LP_Lender_CurrentState import LP_Lender_state_gen
-from modules import LS_Interest
+from modules import LS_Interest_v07
 from modules.LS_State import LS_State_ini
 import concurrent.futures
 from concurrent.futures import ALL_COMPLETED

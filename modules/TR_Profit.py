@@ -11,7 +11,7 @@ def tr_profit_amnt_stable(timestamp, i, c, rewards_distributed_amnt, LP_Pool_Sta
     if i == 0:
         a = pd.DataFrame(args["symbol_digit"])
         c = a.loc[a["symbol"] == args["currency_stable"]]["digit"].values[0].astype(float)
-        var = args["nolus_token_count_ini"] *args["nolus_token_price_ini"] * 10 ** c
+        var = args["nolus_token_count_ini"] *args["nolus_token_price_ini"]# * 10 ** c
         return var
     lpps = LP_Pool_State.loc[LP_Pool_State["LP_Pool_timestamp"]==timestamp]
     lso = LS_Opening.loc[LS_Opening["LS_timestamp"]==timestamp]
@@ -41,7 +41,7 @@ def tr_profit_amnt_stable(timestamp, i, c, rewards_distributed_amnt, LP_Pool_Sta
     var = pd.merge(var, ls_profit, on=["TR_Profit_timestamp"], how="left")
     var = pd.merge(var, lp_profit, on=["TR_Profit_timestamp"], how="left")
     var = var.fillna(0)
-    var["all_tr_profit"] = var["ls_profit"]*10**c + var["lp_profit"]*10**c + var["LS_loan_amnt_stable"] + var["SYS_TR_interest"] - rewards_distributed_amnt
+    var["all_tr_profit"] = var["ls_profit"] + var["lp_profit"] + var["LS_loan_amnt_stable"] + var["SYS_TR_interest"] - rewards_distributed_amnt
 
 
     return var["all_tr_profit"].values
@@ -49,11 +49,9 @@ def tr_profit_amnt_stable(timestamp, i, c, rewards_distributed_amnt, LP_Pool_Sta
 
 
 def TR_Profit_update(timestamp, i,rewards_distributed_amnt,nolus_price, TR_Profit, LP_Pool_State, PL_State, LS_Opening, args):
-    a = pd.DataFrame(args["symbol_digit"])
-    c = a.loc[a["symbol"] == args["currency_stable"]]["digit"].values[0].astype(float)
+    c=1
     amnt_stable = tr_profit_amnt_stable(timestamp,i,c,rewards_distributed_amnt, LP_Pool_State, PL_State, LS_Opening, args)
     temp = pd.DataFrame({"TR_Profit_height":(100+i),"TR_Profit_idx":(100+i),"TR_Profit_timestamp":timestamp,"TR_Profit_amnt_stable":amnt_stable,"TR_Profit_amnt_nls":amnt_stable/nolus_price.loc[nolus_price["MP_timestamp"]==timestamp]["MP_price_in_stable"].values},index=[0])#args["nolus_token_price_ini"]},index=[0])
-    temp["TR_Profit_amnt_nls"] = temp["TR_Profit_amnt_nls"]/10**c
     TR_Profit = TR_Profit.drop(TR_Profit.loc[TR_Profit["TR_Profit_timestamp"] == timestamp].index)
     TR_Profit = pd.concat([TR_Profit, temp], axis=0, ignore_index=True)
     return TR_Profit

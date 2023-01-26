@@ -82,7 +82,7 @@ def LS_loan_amnt_stable_asset(MP_Asset, LS_Openings, args):
 
     #todo: check for na and replace with new values
 
-    ls["MP_loan_amnt_stable"] = ls["MP_price_in_stable"].astype("uint64")
+    #ls["MP_loan_amnt_stable"] = ls["MP_price_in_stable"].astype("uint64")
     num=args["LS_loan_amnt_asset_stable_df_num"]
     den=args["LS_loan_amnt_asset_stable_df_den"]
     minval=args["LS_loan_amnt_asset_stable_min"]
@@ -94,8 +94,8 @@ def LS_loan_amnt_stable_asset(MP_Asset, LS_Openings, args):
         #ls = pd.merge(ls,temp_df,on=["LS_asset_symbol","LS_timestamp"],how='left')
     #digit = pd.DataFrame(ls["LS_loan_symbol"].tolist(), index=ls.index)
     # loans
-    ls["LS_loan_amnt_stable"] = ls["LS_loan_amnt_stable"].round(0).astype("uint64")
-    ls["LS_loan_amnt_stable"] = ls["LS_loan_amnt_stable"].multiply(10**sym_digit.loc[sym_digit["LS_asset_symbol"]==args["currency_stable"],"digit"].values[0])
+    ls["LS_loan_amnt_stable"] = ls["LS_loan_amnt_stable"]#.round(0).astype("uint64")
+    ls["LS_loan_amnt_stable"] = ls["LS_loan_amnt_stable"]#.multiply(10**sym_digit.loc[sym_digit["LS_asset_symbol"]==args["currency_stable"],"digit"].values[0])
 
     ls["LS_loan_amnt_asset"] = ls["LS_loan_amnt_stable"]/ls["MP_price_in_stable"]
     # colaterals
@@ -103,11 +103,11 @@ def LS_loan_amnt_stable_asset(MP_Asset, LS_Openings, args):
     ls["LS_cltr_amnt_asset"] = gnrl.f_dist(df_num, df_den, df_min_cltr, df_max_cltr, len(LS_Openings), args) * ls[
         "LS_loan_amnt_asset"]
     ls["LS_cltr_amnt_stable"] = ls["LS_cltr_amnt_asset"] * ls["MP_price_in_stable"]
-    ls["LS_cltr_amnt_stable"] = ls["LS_cltr_amnt_stable"].round(0).astype("uint64")
+    ls["LS_cltr_amnt_stable"] = ls["LS_cltr_amnt_stable"]#.round(0).astype("uint64")
     ls["SYS_LS_cltr_amnt_asset"] = ls["LS_cltr_amnt_asset"]
     ls["SYS_LS_loan_amnt_asset"] = ls["LS_loan_amnt_asset"]
-    ls["LS_cltr_amnt_asset"] = ls["LS_cltr_amnt_asset"].multiply(10 ** ls["digit"]).round(0).astype("uint64")
-    ls["LS_loan_amnt_asset"] = ls["LS_loan_amnt_asset"].multiply(10 ** ls["digit"]).round(0).astype("uint64")
+    #ls["LS_cltr_amnt_asset"] = ls["LS_cltr_amnt_asset"].multiply(10 ** ls["digit"]).round(0).astype("uint64")
+    #ls["LS_loan_amnt_asset"] = ls["LS_loan_amnt_asset"].multiply(10 ** ls["digit"]).round(0).astype("uint64")
    # ls = ls.drop(["digit"], axis=1)
     return ls
 
@@ -122,15 +122,15 @@ def LS_Opening_Generate(MP_Asset, pool_id, args,name=""):
     #check
     # loan amnt stable and loan amnt asset cltr
     ll_as = LS_loan_amnt_stable_asset(MP_Asset, LS_Opening, args)
-    LS_Opening["LS_loan_amnt_asset"] = ll_as[["LS_loan_amnt_asset"]].astype("uint64")
-    LS_Opening["LS_loan_amnt_stable"] = ll_as["LS_loan_amnt_stable"].astype("uint64")
+    LS_Opening["LS_loan_amnt_asset"] = ll_as[["LS_loan_amnt_asset"]]#.astype("uint64")
+    LS_Opening["LS_loan_amnt_stable"] = ll_as["LS_loan_amnt_stable"]#.astype("uint64")
     LS_Opening["LS_asset_symbol"] = ll_as["LS_asset_symbol"]
     ll_sym = LS_loan_symbol(MP_Asset, args)
     LS_Opening = pd.merge(LS_Opening, ll_sym, how="left", on="LS_asset_symbol")
     # ls_symbol ls_loan
     LS_Opening["LS_cltr_symbol"] = ll_as["LS_cltr_symbol"]
-    LS_Opening["LS_cltr_amnt_stable"] = ll_as["LS_cltr_amnt_stable"].astype("uint64")
-    LS_Opening["LS_cltr_amnt_asset"] = ll_as["LS_cltr_amnt_asset"].astype("uint64")
+    LS_Opening["LS_cltr_amnt_stable"] = ll_as["LS_cltr_amnt_stable"]#.astype("uint64")
+    LS_Opening["LS_cltr_amnt_asset"] = ll_as["LS_cltr_amnt_asset"]#.astype("uint64")
     LS_Opening["SYS_LS_cltr_amnt_asset"] = ll_as["SYS_LS_cltr_amnt_asset"]
     LS_Opening["SYS_LS_loan_amnt_asset"] = ll_as["SYS_LS_loan_amnt_asset"]
     np.random.seed(args["seed"])
@@ -151,10 +151,10 @@ def LS_Opening_Generate(MP_Asset, pool_id, args,name=""):
     LS_Opening["MP_price_in_stable"] = LS_Opening["MP_price_in_stable"].fillna(1)
     LS_Opening["MP_price_in_stable"] = LS_Opening["MP_price_in_stable"] / 10 ** LS_Opening["digit"]
     LS_Opening["MP_price_in_stable"].loc[LS_Opening["LP_symbol"] == args["currency_stable"]] = 1
-    LS_Opening["LS_loan_amnt_stable"] = LS_Opening["LS_loan_amnt_stable"].multiply(LS_Opening["MP_price_in_stable"],
-                                                                                   axis="index").astype("uint64")
-    LS_Opening["LS_cltr_amnt_stable"] = LS_Opening["LS_cltr_amnt_stable"].multiply(LS_Opening["MP_price_in_stable"],
-                                                                                   axis="index").astype("uint64")
+    # LS_Opening["LS_loan_amnt_stable"] = LS_Opening["LS_loan_amnt_stable"].multiply(LS_Opening["MP_price_in_stable"],
+    #                                                                                axis="index")#.astype("uint64")
+    # LS_Opening["LS_cltr_amnt_stable"] = LS_Opening["LS_cltr_amnt_stable"].multiply(LS_Opening["MP_price_in_stable"],
+    #                                                                                axis="index")#.astype("uint64")
 
     # LS_native_amnt_stable_nolus
     LS_Opening["LS_native_amnt_nolus"] = 0

@@ -35,7 +35,7 @@
   "LP_amnt_stable_max": 50000,
   "LP_multiplyer": 20000,
   "base_interest": 10,
-  "startup_pool_value": 100000,
+  "startup_pool_value": 1000000,
   "optimal_util": 70,
   "slope1": 4.9,
   "slope2": 10,

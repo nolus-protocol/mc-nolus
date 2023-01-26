@@ -77,19 +77,20 @@ def start(startup_args):
         LP_Deposit = LP_Deposit_Generate(MP_Asset, LP_Pool, args)
         LS_Repayment = LS_Repayment_generate(LS_Opening, LP_Pool, args)
         LS_Liquidation = LS_Liquidation_generate(MP_Asset, LS_Opening, LS_Repayment, args)
-        LP_Withdraw, SYS_LP_Withdraw = LP_Withdraw_generate(LP_Deposit, LP_Pool, args)
+        LP_Deposit,LP_Withdraw, SYS_LP_Withdraw = LP_Withdraw_generate(LP_Deposit, LP_Pool, args)
         LP_Pool_State = LP_Pool_State_gen(LP_Pool,min_timestamp,args)
         TR_Profit = TR_Profit_ini()
         TR_Rewards_Distribution = TR_Rewards_Distribution_ini()
-        TR_State = TR_State_ini()
+        TR_State = TR_State_ini(min_timestamp,args,nolus_ini_price["MP_price_in_stable"][0])
         LS_State = LS_State_ini(LS_Opening, args)
         nolus_price = pd.read_csv(args["nls_file_name"], index_col=0)
+        nolus_price["MP_timestamp"] = MP_Asset.drop_duplicates(subset="MP_timestamp")["MP_timestamp"]
         LS_Opening, LP_Deposit, LS_Repayment, LS_Liquidation, LP_Withdraw, LP_Pool_State, SYS_LP_Withdraw, PL_Interest, LS_Closing, PL_State, TR_State, TR_Profit, TR_Rewards_Distribution, LS_State, nolus_price = LS_Interest.MC_dayli_calculcations(MP_Asset, LS_Opening, LP_Deposit, LS_Repayment, LS_Liquidation, LP_Withdraw, SYS_LP_Withdraw,LP_Pool_State, LS_Closing, PL_State, TR_Profit, TR_State, TR_Rewards_Distribution, LS_State, nolus_price,LP_Pool, args)
         PL_State = PL_State_finalize(nolus_price, PL_State, LP_Pool_State, LS_Opening, LS_Repayment, LS_Closing,
                                      LP_Deposit, LP_Withdraw, TR_Profit,
                                      TR_Rewards_Distribution, PL_Interest, args)
-        LP_Lender_State = LP_Lender_state_gen(MP_Asset, SYS_LP_Withdraw, TR_Rewards_Distribution, LP_Pool, args)
-        LS_State =LS_State.drop(columns={"SYS_LS_staked_cltr_in_stable_left","coef","LS_principal_stable_left","borowed_to_cltr","post_to_pre"})
+        LP_Lender_State = SYS_LP_Withdraw[["LP_timestamp","LP_address_id","LP_Pool_id","LP_Lender_rewards_nls_total","LP_Lender_rewards_stable"]]
+        #LS_State =LS_State.drop(columns={"SYS_LS_staked_cltr_in_stable_left","coef","LS_principal_stable_left","borowed_to_cltr","post_to_pre"})
         #Part1
 
         PL_Utilization["" + str(i) + ""] = PL_Interest[["PL_timestamp", "Util"]].groupby("PL_timestamp").mean().reset_index(drop=True)["Util"].values
@@ -307,48 +308,48 @@ if __name__ == '__main__':
     with open("config.json", 'r') as f:
         startup_args = json.load(f)
     params = startup_args["Open_Daily_Count_dict"]
-    while prompt != "start":
-        print("Current configuration:" + str(params))
-        distribution = client_distribution_generator(params)
-        distribution.plot(x="Days", y="Count")
-        plt.show()
-        while True:
-            table = ""
-            prompt = input("Choose distribution[LS,LP]:")
-            if prompt == "end":
-                prompt = input("Start simulation?(y/n)")
-                if prompt == "y":
-                    prompt = "start"
-                    break
-                else:
-                    continue
-            else:
-                table = prompt
-            params = {}
-            while True:
-                prompt = input("Day:")
-                if prompt == "end":
-                    break
-
-                day = prompt
-                prompt = input("Count:")
-                if prompt == "end":
-                    break
-                count = prompt
-                params[day] = float(count)
-            distribution = client_distribution_generator(params)
-            distribution.plot(x="Days", y="Count")
-            plt.show()
-            prompt = input("Proceed updating " + table + " distribution?(y/n/)")
-            if prompt == 'y':
-                distribution.to_csv(str(startup_args["new_" + table + "_opened_daily_count"]))
-            else:
-                prompt = input("Start simulation?(y/n)")
-                if prompt == 'y':
-                    prompt = "start"
-                    break
-                else:
-                    pass
+    # while prompt != "start":
+    #     print("Current configuration:" + str(params))
+    #     distribution = client_distribution_generator(params)
+    #     distribution.plot(x="Days", y="Count")
+    #     plt.show()
+    #     while True:
+    #         table = ""
+    #         prompt = input("Choose distribution[LS,LP]:")
+    #         if prompt == "end":
+    #             prompt = input("Start simulation?(y/n)")
+    #             if prompt == "y":
+    #                 prompt = "start"
+    #                 break
+    #             else:
+    #                 continue
+    #         else:
+    #             table = prompt
+    #         params = {}
+    #         while True:
+    #             prompt = input("Day:")
+    #             if prompt == "end":
+    #                 break
+    #
+    #             day = prompt
+    #             prompt = input("Count:")
+    #             if prompt == "end":
+    #                 break
+    #             count = prompt
+    #             params[day] = float(count)
+    #         distribution = client_distribution_generator(params)
+    #         distribution.plot(x="Days", y="Count")
+    #         plt.show()
+    #         prompt = input("Proceed updating " + table + " distribution?(y/n/)")
+    #         if prompt == 'y':
+    #             distribution.to_csv(str(startup_args["new_" + table + "_opened_daily_count"]))
+    #         else:
+    #             prompt = input("Start simulation?(y/n)")
+    #             if prompt == 'y':
+    #                 prompt = "start"
+    #                 break
+    #             else:
+    #                 pass
     #test()
     start(startup_args)
 
