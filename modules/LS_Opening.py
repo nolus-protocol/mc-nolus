@@ -37,7 +37,7 @@ def LS_loan_symbol(MP_Asset,args):
     LS_Loan_symbol = pd.DataFrame()
     LS_Loan_symbol[["LS_asset_symbol"]] = symbol_vals
     LS_Loan_symbol[["LS_loan_symbol"]] = ls
-    tdf = pd.DataFrame({"symbol":symbol_vals,"digit":digit})
+    #tdf = pd.DataFrame({"symbol":symbol_vals,"digit":digit})
     return LS_Loan_symbol
 
 
@@ -80,7 +80,6 @@ def LS_loan_amnt_stable_asset(MP_Asset, LS_Openings, args):
             "LS_asset_symbol"]
     ls = pd.merge(ls, sym_digit, on=["LS_asset_symbol"], how='left')
 
-    #todo: check for na and replace with new values
 
     #ls["MP_loan_amnt_stable"] = ls["MP_price_in_stable"].astype("uint64")
     num=args["LS_loan_amnt_asset_stable_df_num"]
@@ -94,8 +93,22 @@ def LS_loan_amnt_stable_asset(MP_Asset, LS_Openings, args):
         #ls = pd.merge(ls,temp_df,on=["LS_asset_symbol","LS_timestamp"],how='left')
     #digit = pd.DataFrame(ls["LS_loan_symbol"].tolist(), index=ls.index)
     # loans
-    ls["LS_loan_amnt_stable"] = ls["LS_loan_amnt_stable"]#.round(0).astype("uint64")
-    ls["LS_loan_amnt_stable"] = ls["LS_loan_amnt_stable"]#.multiply(10**sym_digit.loc[sym_digit["LS_asset_symbol"]==args["currency_stable"],"digit"].values[0])
+    ls["LS_loan_amnt_stable"] = ls["LS_loan_amnt_stable"]
+    #todo: reduce values
+    values = pd.DataFrame()
+    values["timestamp"] = MP_Asset.drop_duplicates(subset="MP_timestamp")["MP_timestamp"]
+    values = values.reset_index()
+    values["demand"] = 0
+    values["demand"] = (np.exp((args["LS_TP_speed_param_2"] - ((values["index"]-args["LS_TP_min"])/(args["LS_TP_max"] - args["LS_TP_min"])*(args["LS_TP_speed_param_2"]-args["LS_TP_speed_param_1"])+args["LS_TP_speed_param_1"]))) - np.exp(args["LS_TP_speed_param_2"]-args["LS_TP_speed_param_1"]))/(np.exp(0) - np.exp(args["LS_TP_speed_param_2"]-args["LS_TP_speed_param_1"]))*(args["LS_TP_max_lvl"] - args["LS_TP_min_lvl"]) + args["LS_TP_min_lvl"]
+    values.loc[values["demand"] < args["LS_TP_min_lvl"], "demand"] = args["LS_TP_min_lvl"]
+    values.loc[values["demand"] > args["LS_TP_max_lvl"], "demand"] = args["LS_TP_max_lvl"]
+
+    ls["demand"] = ls["LS_timestamp"].map(dict(values[["timestamp","demand"]].values))
+    ls["LS_loan_amnt_stable"] = ls["LS_loan_amnt_stable"]*ls["demand"]
+    ls = ls.drop("demand",axis=1)
+    #multiply by contract weight
+    ls["LS_loan_amnt_stable"] = ls["LS_loan_amnt_stable"].multiply(args["contract_weight"])
+
 
     ls["LS_loan_amnt_asset"] = ls["LS_loan_amnt_stable"]/ls["MP_price_in_stable"]
     # colaterals
@@ -113,7 +126,6 @@ def LS_loan_amnt_stable_asset(MP_Asset, LS_Openings, args):
 
 
 def LS_Opening_Generate(MP_Asset, pool_id, args,name=""):
-
 
     # generate timestamps and ids
     names = ["LS_asset_symbol", "LS_timestamp", "LS_contract_id", "LS_address_id"]
@@ -175,9 +187,14 @@ def LS_Opening_Generate(MP_Asset, pool_id, args,name=""):
     # pool_id
     pool_id.rename(columns={"LS_loan_pool_id": "LS_pool_id"})
     LS_Opening = pd.merge(LS_Opening, pool_id, on="LP_symbol", how="left")
+    lp_dep_h = [s for s in range(100, 100 + len(LS_Opening))]
+    lp_dep_idx = lp_dep_h
 
+    LS_Opening["LS_opening_height"] = lp_dep_h
+    LS_Opening["LS_opening_idx"] = lp_dep_idx
     LS_Opening["LS_interest"] = np.nan
 
     LS_Opening = LS_Opening.drop(["MP_price_in_stable", "digit", "LP_symbol"], axis=1)
+
 
     return LS_Opening

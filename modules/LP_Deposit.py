@@ -24,7 +24,7 @@ def LP_Deposit_Generate(MP_Asset, pool_id, args):
                                               args["LP_amnt_stable_min"],
                                               args["LP_amnt_stable_max"],
                                               len(LP_Deposit), args, args["LP_multiplyer"])
-
+    LP_Deposit["LP_amnt_asset"] = LP_Deposit["LP_amnt_asset"].multiply(args["contract_weight"])
     LP_Deposit["LP_amnt_asset"] = LP_Deposit["LP_amnt_asset"].round(0).astype("uint64")
     symbol_digit = pd.DataFrame(args["symbol_digit"])
     symbol_digit = symbol_digit.rename(columns={"symbol": "LP_symbol"})

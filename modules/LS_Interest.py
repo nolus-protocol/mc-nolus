@@ -20,7 +20,7 @@ def get_timestamps(MP_Asset):
     timestamps.rename(columns={"MP_timestamp": "PL_Interest_timestamp"})
     return timestamps
 
-def calculate_interest(timestamp, LP_Pool_State, pool_util, args):
+def calculate_interest(timestamp, LP_Pool_State, pool_util,pool_id, args):
     # util = pd["id":Util]
 
     pools = LP_Pool_State.loc[LP_Pool_State["LP_Pool_timestamp"] == timestamp]
@@ -28,7 +28,16 @@ def calculate_interest(timestamp, LP_Pool_State, pool_util, args):
     # pools = pools.rename(columns={"LP_Pool_id":"id"})
     pools = pd.merge(pools, pool_util, on="LP_Pool_id", how="left")
     util = (pools["LP_Pool_total_borrowed_stable"] / (
-            pools["SYS_LP_Pool_TV_IntDep_stable"] + pools["LP_Pool_total_borrowed_stable"]))
+            pools["SYS_LP_Pool_TV_IntDep_stable"]))
+    if pools.loc[pools["SYS_LP_Pool_TV_IntDep_stable"]==0,"SYS_LP_Pool_TV_IntDep_stable"].count() > 0:
+        if pools.loc[pools["LP_Pool_total_borrowed_stable"] != 0, "SYS_LP_Pool_TV_IntDep_stable"].count() > 0:
+            pool_util = pd.DataFrame({"LP_Pool_id": pool_id["LP_Pool_id"], "Util": np.ones(len(pool_id))})
+        else:
+            pool_util = pd.DataFrame({"LP_Pool_id": pool_id["LP_Pool_id"], "Util": np.zeros(len(pool_id))})
+
+        pool_interest = pd.DataFrame(
+            {"LP_Pool_id": pool_id["LP_Pool_id"], "interest": np.ones(len(pool_id)) * args["base_interest"] / 100})
+        return pool_interest, pool_util
     pools.loc[pools["Util"] <= args["optimal_util"] / 100, ["interest"]] = args["base_interest"] / 100 + (
             util / (args["optimal_util"] / 100)) * (args["slope1"] / 100)
     pools.loc[pools["Util"] > args["optimal_util"] / 100, ["interest"]] = args["base_interest"] / 100 + args[
@@ -114,11 +123,11 @@ def ls_open_contracts(LS_Opening,LS_Repayment,LS_Liquidation,timestamp,pool_inte
     interest_int_min = pd.DataFrame(
         {"LP_Pool_id": pool_interest["LP_Pool_id"], "interest": np.ones(len(pool_interest)) * args["base_interest"]/100})
 
-    interest_int_min["interest"] = pool_interest["interest"] - args["base_interest"]
+    interest_int_min["interest"] = pool_interest["interest"] - args["base_interest"]/100
     #int_max - int_min
     int_min_max = pd.DataFrame(
         {"LP_Pool_id": pool_interest["LP_Pool_id"], "interest": np.ones(len(pool_interest)) * args["base_interest"]/100})
-    int_min_max["interest"] = args["LS_interest_cap"] - int_min_max["interest"]
+    int_min_max["interest"] = args["LS_interest_cap"]/100 - int_min_max["interest"]
     dem = pd.DataFrame(
         {"LP_Pool_id": pool_interest["LP_Pool_id"], "demand": np.ones(len(pool_interest))})
     dem["demand"] = (((np.exp(interest_int_min["interest"]) - np.exp(int_min_max["interest"]))/(1-np.exp(int_min_max["interest"])))*(args["LS_demand_prc_int_min"]-args["LS_demand_prc_int_max"]))+args["LS_demand_prc_int_max"]
@@ -128,7 +137,7 @@ def ls_open_contracts(LS_Opening,LS_Repayment,LS_Liquidation,timestamp,pool_inte
     contracts["index"] = index
     count = contracts.groupby("LP_Pool_id").count().reset_index()
     count["demand"] = count["LP_Pool_id"].map(dict(dem.values))/100
-    count["count"] = count["index"]*count["demand"].astype(int)
+    count["count"] = count["index"]*count["demand"]
     count["drop"] = count["index"] - count["count"]
     contracts = contracts.groupby("LP_Pool_id").agg(list).reset_index()
     idxdrop = []
@@ -152,31 +161,89 @@ def ls_open_contracts(LS_Opening,LS_Repayment,LS_Liquidation,timestamp,pool_inte
     # ret
     return LS_Opening,LS_Repayment,LS_Liquidation
 
-def nolus_price_adjustment(timestamp,pool_util,pool_util_prev,nolus_price,TR_Profit,args):
-    args["platform_nolus_token_count"] = args["platform_nolus_token_count"] + TR_Profit.loc[TR_Profit["TR_Profit_timestamp"]==timestamp,"TR_Profit_amnt_nls"].values
-    #change val with platform token count
-    val = TR_Profit.loc[TR_Profit["TR_Profit_timestamp"]==timestamp,"TR_Profit_amnt_nls"].values
-    if val < 0:
+def lp_open_contracts(LP_Deposit, LP_Withdraw, timestamp, pool_interest, args):
+    #pool_int - int_min
+    #
+    #int_max LP
+    int_max_int = pd.DataFrame(
+        {"LP_Pool_id": pool_interest["LP_Pool_id"],
+         "interest_min": np.ones(len(pool_interest)) * (args["base_interest"] / 100 - args["treasury_interest"] / 100),"interest_max": np.ones(len(pool_interest)) * (args["LS_interest_cap"] / 100 - args["treasury_interest"] / 100)})
+
+    int_max_int["interest_max-interest"] = int_max_int["interest_max"] - (pool_interest["interest"] - args["treasury_interest"] / 100)
+    int_max_int["interest_max-int_min"] = int_max_int["interest_max"] - int_max_int["interest_min"]
+
+    #int_max - int_min
+
+    dem = pd.DataFrame(
+        {"LP_Pool_id": pool_interest["LP_Pool_id"], "demand": np.ones(len(pool_interest))})
+    dem["demand"] = np.exp(int_max_int["interest_max-interest"])
+    dem["demand"] = (((np.exp(int_max_int["interest_max-interest"]) - np.exp(int_max_int["interest_max-int_min"]))/(1-np.exp(int_max_int["interest_max-int_min"]))*(args["LP_demand_prc_int_min"]-args["LP_demand_prc_int_max"]))+args["LP_demand_prc_int_max"])
+
+    contracts = LP_Deposit.loc[LP_Deposit["LP_timestamp"]==timestamp,["LP_Pool_id"]]
+    index = list(contracts.index)
+    contracts["index"] = index
+    count = contracts.groupby("LP_Pool_id").count().reset_index()
+    count["demand"] = count["LP_Pool_id"].map(dict(dem.values))/100
+    count["count"] = count["index"]*count["demand"]
+    count["drop"] = count["index"] - count["count"]
+    contracts = contracts.groupby("LP_Pool_id").agg(list).reset_index()
+    idxdrop = []
+    for pool in contracts["LP_Pool_id"]:
+        np.random.seed(args["seed"])
+        try:
+            idlist = list(contracts.loc[contracts["LP_Pool_id"] == pool]["index"].explode())
+            i = int(count.loc[count["LP_Pool_id"] == pool]["drop"])
+            idxdrop = np.random.choice(idlist,size=i).tolist()
+            cid_drop = LP_Deposit.loc[idxdrop]["SYS_LP_contract_id"]
+            if len(idxdrop) != 0:
+                LP_Deposit = LP_Deposit.drop(idxdrop, axis=0)
+                LP_Withdraw = LP_Withdraw.drop(LP_Withdraw.loc[LP_Withdraw["SYS_LP_contract_id"].isin(cid_drop)].index,axis=0)
+        except:
+            pass
+        args["seed"] +=1
+
+    #ls opening .loc timestamp . groupby(LP_Pool_id)
+    #ls opening .drop(random_choise(count-count_ini, count_ini.index))
+    # ret
+    return LP_Deposit,LP_Withdraw
+
+#Legacy price_adjustment
+# def nolus_price_adjustment(timestamp,pool_util,pool_util_prev,nolus_price,TR_Profit,args):
+#     args["platform_nolus_token_count"] = args["platform_nolus_token_count"] + TR_Profit.loc[TR_Profit["TR_Profit_timestamp"]==timestamp,"TR_Profit_amnt_nls"].values
+#     #change val with platform token count
+#     val = TR_Profit.loc[TR_Profit["TR_Profit_timestamp"]==timestamp,"TR_Profit_amnt_nls"].values
+#     if val < 0:
+#         return nolus_price
+#     proportion = val/args["nls_all_tokens"]
+#     if len(proportion) == 0:
+#         proportion = 0
+#     pu = pool_util.copy()
+#     pup = pool_util_prev.copy()
+#     util = 1 - pu["Util"].mean()/pup["Util"].mean()
+#     if pu["Util"].mean()/pup["Util"].mean() > 1:
+#         util = 0.12
+#     if math.isnan(util) or math.isinf(util):
+#         util = 0
+#     price = nolus_price.loc[nolus_price["MP_timestamp"]==timestamp,["MP_price_in_stable"]]
+#     p1 = price + price*util
+#     # -0.5*cena1 + (1 - (-0.5) * cena) 1.5 * x -  0.5*f(x)
+#     price_new = proportion*p1 + (1-proportion)*price
+#     price = price_new - price
+#     nolus_price.loc[nolus_price["MP_timestamp"] > timestamp, "add"] = price.values
+#     nolus_price.loc[nolus_price["MP_timestamp"] <= timestamp, "add"] = 0
+#     nolus_price["MP_price_in_stable"] = nolus_price["MP_price_in_stable"] + nolus_price["add"]
+#     nolus_price = nolus_price.drop("add",axis=1)
+#     return nolus_price
+
+def nolus_market_price_adjustment(timestamp,prev_timestamp,nolus_price,LP_Pool_State,args):
+    if timestamp == prev_timestamp:
         return nolus_price
-    proportion = val/args["nls_all_tokens"]
-    if len(proportion) == 0:
-        proportion = 0
-    pu = pool_util.copy()
-    pup = pool_util_prev.copy()
-    util = 1 - pu["Util"].mean()/pup["Util"].mean()
-    if pu["Util"].mean()/pup["Util"].mean() > 1:
-        util = 0.12
-    if math.isnan(util) or math.isinf(util):
-        util = 0
-    price = nolus_price.loc[nolus_price["MP_timestamp"]==timestamp,["MP_price_in_stable"]]
-    p1 = price + price*util
-    # -0.5*cena1 + (1 - (-0.5) * cena) 1.5 * x -  0.5*f(x)
-    price_new = proportion*p1 + (1-proportion)*price
-    price = price_new - price
-    nolus_price.loc[nolus_price["MP_timestamp"] > timestamp, "add"] = price.values
-    nolus_price.loc[nolus_price["MP_timestamp"] <= timestamp, "add"] = 0
-    nolus_price["MP_price_in_stable"] = nolus_price["MP_price_in_stable"] + nolus_price["add"]
-    nolus_price = nolus_price.drop("add",axis=1)
+    if LP_Pool_State.loc[LP_Pool_State["LP_Pool_timestamp"]==prev_timestamp]["SYS_LP_Pool_TV_IntDep_stable"].mean()>0:
+        percent_change = LP_Pool_State.loc[LP_Pool_State["LP_Pool_timestamp"]==prev_timestamp]["SYS_LP_Pool_TV_IntDep_stable"].mean()/LP_Pool_State.loc[LP_Pool_State["LP_Pool_timestamp"]==timestamp]["SYS_LP_Pool_TV_IntDep_stable"].mean()
+        prev_price = nolus_price.loc[nolus_price["MP_timestamp"]==prev_timestamp]["MP_price_in_stable"].reset_index(drop=True)
+        next_price = nolus_price.loc[nolus_price["MP_timestamp"]==timestamp]["MP_price_in_stable"].reset_index(drop=True)*args["nolus_price_market_weight"] + prev_price*percent_change*(1-args["nolus_price_market_weight"])
+        nolus_price.loc[nolus_price["MP_timestamp"] == timestamp,"MP_price_in_stable"] = next_price[0]
+
     return nolus_price
 
 def rep_records(timestamp,LS_Opening,LS_Repayment,LS_Liquidation):
@@ -244,7 +311,7 @@ def ls_contract_manager(timestamp, open_ls_contracts, LS_Opening, LS_Repayment, 
     LS_Repayment,LS_Liquidation = rep_records(timestamp,LS_Opening,LS_Repayment,LS_Liquidation)
     # create open ls record
     open_ls_contracts = new_contr(timestamp,LS_Opening,LS_Repayment,open_ls_contracts)
-    #calculate dayli operatable variables : liabilityLPN,SYS_lease_amnt_LPN,SYS_asset_price_stable
+    #calculate dayli operatable variables : liabilityLPN,SYS_lease_amnt_LPN == SYS_asset_price_stable
     open_ls_contracts = calculate_liability(timestamp,open_ls_contracts,MP_Asset)
     open_ls_contracts=open_ls_contracts.reset_index(drop=True)
     return open_ls_contracts, LS_Repayment, LS_Liquidation
@@ -266,11 +333,11 @@ def lp_record_creator(timestamp, open_lp_contracts, LP_Deposit, p_i):
 
 def lp_contract_manager(timestamp, open_lp_contracts, LP_Deposit, SYS_LP_Withdraw, pool_interest,args):
     #define interest
-    p_i = pool_interest
+    p_i = pool_interest.copy()
     p_i["interest"] = p_i["interest"] - args["treasury_interest"] / 100
     #open lp_contracts calculate interest for current date
     open_lp_contracts = lp_record_creator(timestamp,open_lp_contracts,LP_Deposit,p_i)
-
+    open_lp_contracts["LP_timestamp"] = timestamp
     #SYS_LP_Withdraw = pd.concat([SYS_LP_Withdraw,open_lp_contracts],axis=0)
     return open_lp_contracts,SYS_LP_Withdraw
 
@@ -286,8 +353,6 @@ def ls_payment_events(timestamp,open_ls_contracts, rep, liq,MP_Asset,symbol_id,a
     repayment_sum = rep[["LS_symbol","LS_amnt_stable"]].groupby("LS_symbol")["LS_amnt_stable"].sum()
     repayment_principal = rep[["LS_symbol","LS_principal_stable"]].groupby("LS_symbol")["LS_principal_stable"].sum()
     #apply liquidation type 1 alll repayments = nan
-    if timestamp == "2021-05-28":
-        print(0)
     open_ls_contracts["substract"] = open_ls_contracts["LS_contract_id"].map(dict(liq[["LS_contract_id","LS_amnt_stable"]].values))
     open_ls_contracts.loc[liq_cond,"substract"] = open_ls_contracts.loc[liq_cond,"substract"]/open_ls_contracts.loc[liq_cond,"SYS_asset_price_stable"]
     open_ls_contracts.loc[liq_cond,"LS_loan_amnt"] =open_ls_contracts.loc[liq_cond,"LS_loan_amnt"] -open_ls_contracts["substract"]
@@ -344,8 +409,8 @@ def liq_type2_payments_update(timestamp, contracts_to_liquidate, LS_Repayment, L
     liq = liq.drop("post_to_pre",axis=1)
     rep_drop_cond = ((LS_Repayment["LS_contract_id"].isin(contracts_to_liquidate["LS_contract_id"])) & (LS_Repayment["LS_timestamp"].astype("str") >= timestamp))
     liq_drop_cond = ((LS_Liquidation["LS_contract_id"].isin(contracts_to_liquidate["LS_contract_id"])) & (LS_Liquidation["LS_timestamp"].astype("str") >= timestamp) & (LS_Liquidation["LS_transaction_type"] < 2))
-    LS_Repayment.drop(rep_drop_cond.index,axis=0)
-    LS_Liquidation.drop(liq_drop_cond.index,axis=0)
+    LS_Repayment = LS_Repayment.drop(LS_Repayment[rep_drop_cond].index,axis=0)
+    LS_Liquidation = LS_Liquidation.drop(LS_Liquidation[liq_drop_cond].index,axis=0)
     LS_Repayment = pd.concat([LS_Repayment,rep],axis=0)
     LS_Liquidation = pd.concat([LS_Liquidation,liq],axis=0)
 
@@ -353,12 +418,14 @@ def liq_type2_payments_update(timestamp, contracts_to_liquidate, LS_Repayment, L
 
 
 def update_current_state(timestamp,contracts_to_liquidate,LS_Repayment,LS_Liquidation):
+    contracts_to_liquidate["LS_amnt_stable_prev"] = contracts_to_liquidate["LS_amnt_stable"]
     contracts_to_liquidate["LS_amnt_stable"] = contracts_to_liquidate["LS_amnt_stable"] - contracts_to_liquidate["liq_amnt"]
+    contracts_to_liquidate["post_to_pre"] = contracts_to_liquidate["LS_amnt_stable"]/contracts_to_liquidate["LS_amnt_stable_prev"]
+    contracts_to_liquidate = contracts_to_liquidate.drop(["LS_amnt_stable_prev"],axis=1)
     contracts_to_liquidate["SYS_lease_amnt_LPN"] = contracts_to_liquidate["SYS_lease_amnt_LPN"] - contracts_to_liquidate["liq_amnt"]
     contracts_to_liquidate["LS_loan_amnt"] = contracts_to_liquidate["SYS_lease_amnt_LPN"]/contracts_to_liquidate["SYS_asset_price_stable"]
     contracts_to_liquidate["LS_amnt_asset"] = contracts_to_liquidate["LS_loan_amnt"]
-    contracts_to_liquidate["post_to_pre"] = (contracts_to_liquidate["LS_amnt_stable"] - 4*contracts_to_liquidate["LS_current_margin_stable"])/contracts_to_liquidate["LS_principal_stable"]
-    contracts_to_liquidate["LS_principal_stable"] = (contracts_to_liquidate["LS_amnt_stable"] - 4*contracts_to_liquidate["LS_current_margin_stable"])
+    contracts_to_liquidate["LS_principal_stable"] = contracts_to_liquidate["LS_principal_stable"]*contracts_to_liquidate["post_to_pre"]#(contracts_to_liquidate["LS_amnt_stable"] - 4*contracts_to_liquidate["LS_current_margin_stable"])
     LS_Repayment,LS_Liquidation = liq_type2_payments_update(timestamp,contracts_to_liquidate,LS_Repayment,LS_Liquidation)
     contracts_to_liquidate["SYS_liability_LPN"] = contracts_to_liquidate["LS_amnt_stable"]
 
@@ -377,6 +444,7 @@ def liq_type2_handler(timestamp,open_ls_contracts, LS_Repayment, LS_Liquidation,
     contracts_to_liquidate["liq_amnt"] = (contracts_to_liquidate["SYS_liability_LPN"] - (
                 (args["healthy_cltr_percent"] / 100) * contracts_to_liquidate["SYS_lease_amnt_LPN"])) / (
                                                      1 - (args["healthy_cltr_percent"] / 100))
+    contracts_to_liquidate.loc[contracts_to_liquidate["liq_amnt"] < 0,"liq_amnt"] = contracts_to_liquidate.loc[contracts_to_liquidate["liq_amnt"] < 0,"SYS_lease_amnt_LPN"]
     contracts_to_liquidate["liq_amnt"] = contracts_to_liquidate[["SYS_lease_amnt_LPN", "liq_amnt"]].min(axis=1)
     #apply liquidation amnt to current_state
     contracts_to_close = contracts_to_liquidate.loc[contracts_to_liquidate["liq_amnt"] == contracts_to_liquidate["SYS_lease_amnt_LPN"]]
@@ -385,8 +453,8 @@ def liq_type2_handler(timestamp,open_ls_contracts, LS_Repayment, LS_Liquidation,
     #create liquidation record
     LS_Liquidation = LS_State.liq_record_creation(timestamp,contracts_to_liquidate,LS_Liquidation,pool_id)
     LS_Liquidation = LS_State.liq_record_creation(timestamp,contracts_to_close,LS_Liquidation,pool_id)
-    LS_Liquidation.loc[(LS_Liquidation["LS_timestamp"]==timestamp) & (LS_Liquidation["LS_contract_id"].isin(contracts_to_close["LS_contract_id"])),"LS_transaction_type"]=2
-    LS_Closing = LS_Closing_market_cond_update(timestamp, LS_Closing, LS_Liquidation)
+    LS_Liquidation.loc[(LS_Liquidation["LS_timestamp"]==timestamp) & (LS_Liquidation["LS_contract_id"].isin(contracts_to_close["LS_contract_id"]) & (LS_Liquidation["LS_transaction_type"] > 2)),"LS_transaction_type"]=2
+    LS_Closing,LS_Liquidation = LS_Closing_market_cond_update(timestamp, LS_Closing, LS_Liquidation)
     #drop records for closed contracts and partialli liquidated
     open_ls_contracts = open_ls_contracts.drop(open_ls_contracts.loc[open_ls_contracts["LS_contract_id"].isin(contracts_to_close["LS_contract_id"])].index,axis=0)
     open_ls_contracts = open_ls_contracts.drop(open_ls_contracts.loc[open_ls_contracts["LS_contract_id"].isin(contracts_to_liquidate["LS_contract_id"])].index,axis=0)
@@ -442,7 +510,7 @@ def ls_event_manager(timestamp, open_ls_contracts, LS_Repayment, LS_Liquidation,
     liquidation_sum["LS_amnt_stable"] =liquidation_sum["LS_amnt_stable"] + liquidation_sum["LP_Pool_id"].map(dict(liquidation_type_1[["LP_Pool_id","LS_amnt_stable"]].values))
     repayment_principal["LP_Pool_id"] = repayment_principal["LS_symbol"].map(symbol_id)
     repayment_principal = repayment_principal.drop("LS_symbol",axis=1)
-    return open_ls_contracts,repayment_sum,repayment_principal,liquidation_sum,LS_Liquidation,LS_Closing
+    return open_ls_contracts,repayment_sum,repayment_principal,liquidation_sum,LS_Liquidation,LS_Repayment,LS_Closing
 
 
 def lp_event_manager(timestamp, open_lp_contracts, LP_Withdraw, SYS_LP_Withdraw,pool_id):
@@ -453,7 +521,7 @@ def lp_event_manager(timestamp, open_lp_contracts, LP_Withdraw, SYS_LP_Withdraw,
         return withdraw_sum,open_lp_contracts,LP_Withdraw,SYS_LP_Withdraw
     withdraw = open_lp_contracts.loc[open_lp_contracts["SYS_LP_contract_id"].isin(contracts_to_close["SYS_LP_contract_id"]),["SYS_LP_contract_id","LP_Pool_id","LP_amnt_stable","SYS_LP_interest_gain"]]
     withdraw["sum"] = withdraw["LP_amnt_stable"] + withdraw["SYS_LP_interest_gain"]
-    LP_Withdraw.loc[LP_Withdraw["SYS_LP_contract_id"].isin(withdraw["SYS_LP_contract_id"]),"LP_amnt_stable"] = LP_Withdraw.loc[LP_Withdraw["SYS_LP_contract_id"].isin(withdraw["SYS_LP_contract_id"]),"SYS_LP_contract_id"].map(dict(withdraw[["SYS_LP_contract_id","sum"]]))
+    LP_Withdraw.loc[LP_Withdraw["SYS_LP_contract_id"].isin(withdraw["SYS_LP_contract_id"]),"LP_amnt_stable"] = LP_Withdraw.loc[LP_Withdraw["SYS_LP_contract_id"].isin(withdraw["SYS_LP_contract_id"]),"SYS_LP_contract_id"].map(dict(withdraw[["SYS_LP_contract_id","sum"]].values))
     #drop lp contracts
     open_lp_contracts = open_lp_contracts.loc[~open_lp_contracts["SYS_LP_contract_id"].isin(withdraw["SYS_LP_contract_id"])]
     #normalize withdraw_sum
@@ -510,6 +578,27 @@ def print_report(timestamp,pool_util,withdraw_sum,liquidation_sum,repayment_sum,
 
     return
 
+
+def low_liquidity_contracts(open_ls_contracts, LS_Repayment, LS_Liquidation, LS_Closing, liquidation_sum,pool_id, timestamp, args):
+    low_liquidity = open_ls_contracts.loc[open_ls_contracts["SYS_lease_amnt_LPN"]<args["LS_loan_amnt_stable_low_liquidity_cap"]]
+    open_ls_contracts = open_ls_contracts.loc[~open_ls_contracts["LS_contract_id"].isin(low_liquidity["LS_contract_id"])]
+    rep_drop_cond = ((LS_Repayment["LS_contract_id"].isin(low_liquidity["LS_contract_id"])) & (
+                LS_Repayment["LS_timestamp"].astype("str") >= timestamp))
+    liq_drop_cond = ((LS_Liquidation["LS_contract_id"].isin(low_liquidity["LS_contract_id"])) & (
+                LS_Liquidation["LS_timestamp"].astype("str") >= timestamp) & (
+                                 LS_Liquidation["LS_transaction_type"] < 2))
+
+    LS_Repayment = LS_Repayment.drop(LS_Repayment[rep_drop_cond].index, axis=0)
+    LS_Liquidation = LS_Liquidation.drop(LS_Liquidation[liq_drop_cond].index, axis=0)
+    low_liquidity["liq_amnt"] = low_liquidity["LS_amnt_stable"]
+    LS_Liquidation = LS_State.liq_record_creation(timestamp,low_liquidity,LS_Liquidation,pool_id)
+    liq_drop_cond = ((LS_Liquidation["LS_contract_id"].isin(low_liquidity["LS_contract_id"])) & (
+            LS_Liquidation["LS_timestamp"].astype("str") == timestamp))
+    LS_Liquidation.loc[liq_drop_cond,"LS_transaction_type"] = 2
+
+    return open_ls_contracts, LS_Repayment, LS_Liquidation, LS_Closing,liquidation_sum
+
+
 def MC_dayli_calculcations(MP_Asset,LS_Opening, LP_Deposit, LS_Repayment, LS_Liquidation, LP_Withdraw, SYS_LP_Withdraw,
                           LP_Pool_State,LS_Closing, PL_State,TR_Profit,TR_State,TR_Rewards_Distribution,LS_State,nolus_price, pool_id, args):
     repayment_sum = 0
@@ -538,6 +627,7 @@ def MC_dayli_calculcations(MP_Asset,LS_Opening, LP_Deposit, LS_Repayment, LS_Liq
     repayment_sum_prev = 0
     repayment_principal_prev = 0
     lpps_prev = LP_Pool_State.copy()
+    ls_closing_prev = LS_Closing.copy()
     while i <= len(timestamps)-1:
         timestamp = timestamps.values[i][0]
         if (i-1)<0:
@@ -545,10 +635,17 @@ def MC_dayli_calculcations(MP_Asset,LS_Opening, LP_Deposit, LS_Repayment, LS_Liq
         else:
             prev_timestamp = timestamps.values[i-1][0]
         i = i + 1
+        #Simulation start
+        # ls_open_contracts - adjust demand on interest
         LS_Opening,LS_Repayment,LS_Liquidation = ls_open_contracts(LS_Opening,LS_Repayment,LS_Liquidation, timestamp, pool_interest, args)
+        LP_Deposit,LP_Withdraw = lp_open_contracts(LP_Deposit, LP_Withdraw, timestamp, pool_interest, args)
+        #Open LS and LP contracts
+        # Create LS_State and LP Lender_State records from LS_Opening and LP_Deposit
         open_ls_contracts, LS_Repayment, LS_Liquidation = ls_contract_manager(timestamp,open_ls_contracts,LS_Opening,LS_Repayment,LS_Liquidation,MP_Asset,pool_interest,args)
         open_lp_contracts, SYS_LP_Withdraw = lp_contract_manager(timestamp, open_lp_contracts, LP_Deposit, SYS_LP_Withdraw, pool_interest,args)
-        open_ls_contracts,repayment_sum,repayment_principal,liquidation_sum,LS_Liquidation,LS_Closing = ls_event_manager(timestamp, open_ls_contracts, LS_Repayment, LS_Liquidation, LS_Closing,MP_Asset,symbol_id,pool_id,args)
+        #
+        open_ls_contracts,repayment_sum,repayment_principal,liquidation_sum,LS_Liquidation,LS_Repayment,LS_Closing = ls_event_manager(timestamp, open_ls_contracts, LS_Repayment, LS_Liquidation, LS_Closing,MP_Asset,symbol_id,pool_id,args)
+        open_ls_contracts, LS_Repayment, LS_Liquidation, LS_Closing,liquidation_sum = low_liquidity_contracts(open_ls_contracts, LS_Repayment, LS_Liquidation, LS_Closing, liquidation_sum,pool_id, timestamp, args)
         open_ls_contracts,LS_Closing = close_contracts(timestamp,open_ls_contracts,LS_Closing,LS_Repayment)
         withdraw_sum,open_lp_contracts,LP_Withdraw,SYS_LP_Withdraw = lp_event_manager(timestamp, open_lp_contracts, LP_Withdraw, SYS_LP_Withdraw, pool_id)
         withdraw_sum, liquidation_sum, repayment_sum, repayment_principal = additions_check(withdraw_sum, liquidation_sum, repayment_sum,repayment_principal,pool_id)
@@ -570,9 +667,10 @@ def MC_dayli_calculcations(MP_Asset,LS_Opening, LP_Deposit, LS_Repayment, LS_Liq
                                   "SYS_LP_Pool_TV_IntDep_stable": "PL_deposited_stable"})
         add["Util"] = add["LP_Pool_id"].map(dict(pool_util.values))
         add["LS_interest"] = add["LP_Pool_id"].map(dict(pool_interest.values))
+        add["LP_interest"] = add["LS_interest"] - 0.02
         #rewards_distributed_amnt = pool_rewards["pool_rewards"].sum()
-        pool_interest, pool_util = calculate_interest(timestamp, LP_Pool_State, pool_util, args)
-        nolus_price = nolus_price_adjustment(timestamp, pool_util, pool_util_prev, nolus_price, TR_Profit, args)
+        pool_interest, pool_util = calculate_interest(timestamp, LP_Pool_State, pool_util,pool_id, args)
+        nolus_price = nolus_market_price_adjustment(timestamp,prev_timestamp, nolus_price,LP_Pool_State, args)
         pool_util, LS_Opening, LS_Repayment, LS_Liquidation, LP_Pool_State, check = check_util(timestamp, pool_util,
                                                                                                LS_Opening, LS_Repayment,
                                                                                                LS_Liquidation,
@@ -589,6 +687,7 @@ def MC_dayli_calculcations(MP_Asset,LS_Opening, LP_Deposit, LS_Repayment, LS_Liq
             pool_util = pool_util_prev.copy()
             open_ls_contracts = open_ls_contracts_prev.copy()
             open_lp_contracts = open_lp_contracts_prev.copy()
+            LS_Closing = ls_closing_prev.copy()
             #rewards_distributed_amnt = rewards_distributed_amnt_prev.copy()
             i = i - 1
         else:
@@ -601,6 +700,7 @@ def MC_dayli_calculcations(MP_Asset,LS_Opening, LP_Deposit, LS_Repayment, LS_Liq
             lpps_prev = LP_Pool_State_curr.copy()
             open_ls_contracts_prev = open_ls_contracts.copy()
             open_lp_contracts_prev = open_lp_contracts.copy()
+            ls_closing_prev = LS_Closing.copy()
             #rewards_distributed_amnt_prev = rewards_distributed_amnt.copy()
             LS_State = pd.concat([LS_State,open_ls_contracts],axis=0)
             SYS_LP_Withdraw = pd.concat([open_lp_contracts, SYS_LP_Withdraw], axis=0)
