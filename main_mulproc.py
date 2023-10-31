@@ -16,7 +16,7 @@ from modules.TR_State import TR_State_ini
 from modules.TR_Rewards_Distribution import TR_Rewards_Distribution_ini
 from modules.PL_CurrentState import PL_State_finalize
 from modules.LP_Lender_CurrentState import LP_Lender_state_gen
-from modules import LS_Interest_v07
+from modules import LS_Interest
 from modules.LS_State import LS_State_ini
 import concurrent.futures
 from concurrent.futures import ALL_COMPLETED
@@ -55,101 +55,37 @@ def add_hyperparameter(Name,Data):
 
 def start(startup_args):
     print("Process "+str(startup_args["run_number"])+" started!")
-    tic = time.perf_counter()
-    nolus_ini_price = pd.read_csv("MP_Asset_nolus.csv")
-    PL_Utilization = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
-    LP_Pool_Util_1 = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
-    LP_Pool_Util_2 = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
-    LS_Count_Open = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
-    LP_Count_Open = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
-    LS_Count_Closed = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
-    LP_Count_Closed = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
-    LS_Interest_mc = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
-    LP_Interest = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
-    TR_Rewards = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
-    LS_Repayment_mc = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
-    LP_Repayment = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
-    MC_Nolus_price = pd.DataFrame({"timestamp":nolus_ini_price["MP_timestamp"]})
+    i = startup_args["run_number"]
     args = startup_args
-    #simulation
+    # simulation
     MP_Asset, MP_Asset_State = MP_Assets_Daily(args)
-    min_timestamp = MP_Asset.loc[MP_Asset["MP_timestamp"] == min(MP_Asset["MP_timestamp"]),"MP_timestamp"][0]
+    min_timestamp = MP_Asset.loc[MP_Asset["MP_timestamp"] == min(MP_Asset["MP_timestamp"]), "MP_timestamp"][0]
+    nolus_price = pd.read_csv(args["nls_file_name"], index_col=0)
+    nolus_price["MP_timestamp"] = MP_Asset.drop_duplicates(subset="MP_timestamp")["MP_timestamp"]
+    tic = time.perf_counter()
     PL_State = PL_State_ini(MP_Asset)
     LS_Closing = LS_Closing_ini()
     LP_Pool = LP_pool_gen(args)
-    LS_Opening = LS_Opening_Generate(MP_Asset, LP_Pool, args,name=str(startup_args["run_number"]))
+    LS_Opening = LS_Opening_Generate(MP_Asset, LP_Pool, args)
     LP_Deposit = LP_Deposit_Generate(MP_Asset, LP_Pool, args)
     LS_Repayment = LS_Repayment_generate(LS_Opening, LP_Pool, args)
     LS_Liquidation = LS_Liquidation_generate(MP_Asset, LS_Opening, LS_Repayment, args)
-    LP_Withdraw, SYS_LP_Withdraw = LP_Withdraw_generate(LP_Deposit, LP_Pool, args)
-    LP_Pool_State = LP_Pool_State_gen(LP_Pool,min_timestamp,args)
+    LP_Deposit, LP_Withdraw, SYS_LP_Withdraw = LP_Withdraw_generate(LP_Deposit, LP_Pool, args)
+    LP_Pool_State = LP_Pool_State_gen(LP_Pool, min_timestamp, args)
     TR_Profit = TR_Profit_ini()
     TR_Rewards_Distribution = TR_Rewards_Distribution_ini()
-    TR_State = TR_State_ini()
+    TR_State = TR_State_ini(min_timestamp, args, nolus_price["MP_price_in_stable"][0])
     LS_State = LS_State_ini(LS_Opening, args)
-    nolus_price = pd.read_csv(args["nls_file_name"], index_col=0)
-    LS_Opening, LP_Deposit, LS_Repayment, LS_Liquidation, LP_Withdraw, LP_Pool_State, SYS_LP_Withdraw, PL_Interest, LS_Closing, PL_State, TR_State, TR_Profit, TR_Rewards_Distribution, LS_State, nolus_price = LS_Interest.MC_dayli_calculcations(MP_Asset, LS_Opening, LP_Deposit, LS_Repayment, LS_Liquidation, LP_Withdraw, SYS_LP_Withdraw,LP_Pool_State, LS_Closing, PL_State, TR_Profit, TR_State, TR_Rewards_Distribution, LS_State, nolus_price,LP_Pool, args)
+
+    LS_Opening, LP_Deposit, LS_Repayment, LS_Liquidation, LP_Withdraw, LP_Pool_State, SYS_LP_Withdraw, PL_Interest, LS_Closing, PL_State, TR_State, TR_Profit, TR_Rewards_Distribution, LS_State, nolus_price = LS_Interest.MC_dayli_calculcations(
+        MP_Asset, LS_Opening, LP_Deposit, LS_Repayment, LS_Liquidation, LP_Withdraw, SYS_LP_Withdraw, LP_Pool_State,
+        LS_Closing, PL_State, TR_Profit, TR_State, TR_Rewards_Distribution, LS_State, nolus_price, LP_Pool, args)
     PL_State = PL_State_finalize(nolus_price, PL_State, LP_Pool_State, LS_Opening, LS_Repayment, LS_Closing,
                                  LP_Deposit, LP_Withdraw, TR_Profit,
                                  TR_Rewards_Distribution, PL_Interest, args)
-    #LP_Lender_State = LP_Lender_state_gen(MP_Asset, SYS_LP_Withdraw, TR_Rewards_Distribution, LP_Pool, args)
+    LP_Lender_State = SYS_LP_Withdraw[["LP_timestamp", "LP_address_id", "LP_Pool_id", "LP_Lender_rewards_nls_total", "LP_Lender_rewards_stable"]]
 
-    #Result aggregation
-    # PL_Utilization["" + str(args["run_number"]) + ""] = PL_Interest[["PL_timestamp", "Util"]].groupby("PL_timestamp").mean().reset_index(drop=True)["Util"].values
-    # # hardcoded .... FOR NOW
-    # LP_Pool_Util_1["" + str(args["run_number"]) + ""] = PL_Interest.loc[PL_Interest["LP_Pool_id"] == "pid100", ["Util"]].reset_index(
-    #     drop=True)
-    # LP_Pool_Util_2["" + str(args["run_number"])+ ""] = PL_Interest.loc[PL_Interest["LP_Pool_id"] == "pid101", ["Util"]].reset_index(
-    #     drop=True)
-    # LS_Count_Open["" + str(args["run_number"]) + ""] = PL_State["PL_LS_count_open"]
-    # LS_Count_Closed["" + str(args["run_number"]) + ""] = PL_State["PL_LS_count_closed"]
-    # LP_Count_Open["" + str(args["run_number"]) + ""] = PL_State["PL_LP_count_open"]
-    # LP_Count_Closed["" + str(args["run_number"]) + ""] = PL_State["PL_LP_count_closed"]
-    # LS_Interest_mc["" + str(args["run_number"]) + ""] = \
-    # PL_Interest[["PL_timestamp", "LS_interest"]].groupby("PL_timestamp").mean().reset_index(drop=True)[
-    #     "LS_interest"].values * 100  # in percents
-    # LP_Interest["" + str(args["run_number"]) + ""] = \
-    # PL_Interest[["PL_timestamp", "LP_interest"]].groupby("PL_timestamp").mean().reset_index(drop=True)[
-    #     "LP_interest"].values * 100  # in percents
-    # TR_Rewards["" + str(args["run_number"]) + ""] = \
-    # TR_Rewards_Distribution[["TR_Rewards_timestamp", "TR_Rewards_amnt_stable"]].groupby(
-    #     "TR_Rewards_timestamp").sum().reset_index(drop=True)["TR_Rewards_amnt_stable"].values
-    # LS_Repayment_mc["" + str(args["run_number"]) + ""] = LS_Repayment_mc["timestamp"].map(dict(
-    #     LS_Repayment[["LS_timestamp", "LS_amnt_stable"]].groupby(
-    #         "LS_timestamp").sum().reset_index().values)).fillna(0)
-    # a = LP_Withdraw[["LP_timestamp", "LP_amnt_stable"]]
-    # a = a.groupby("LP_timestamp").sum().reset_index()
-    # LP_Repayment["" + str(args["run_number"]) + ""] = LP_Repayment["timestamp"].map(dict(a.values)).fillna(0)
-    # MC_Nolus_price["" + str(args["run_number"])+ ""] = nolus_price["MP_price_in_stable"]
-    print("Process "+str(startup_args["run_number"])+" ended!")
-
-    # if i==0:
-    #     PL_Interest.to_csv("PL_Interest.csv", index=False)
-    #     LS_State.to_csv("LS_State.csv", index=False)
-    #     LS_Opening.to_csv("LS_Opening.csv", index=False)
-    #     LP_Deposit.to_csv("LP_Deposit.csv", index=False)
-    #     SYS_LP_Withdraw.to_csv("SYS_LP_Withdraw.csv", index=False)
-    #     LP_Withdraw.to_csv("LP_Withdraw.csv", index=False)
-    #
-    #     LS_Repayment.to_csv("LS_Repayment.csv", index=False)
-    #     LS_Liquidation.to_csv("LS_Liquidation.csv", index=False)
-    #     LP_Pool_State.to_csv("LP_Pool_State.csv", index=False)
-    #     TR_Profit.to_csv("TR_Profit.csv", index=False)
-    #     PL_State.to_csv("PL_State.csv", index=False)
-    #     LS_Closing.to_csv("LS_Closing.csv", index=False)
-    #     TR_State.to_csv("TR_State.csv", index=False)
-    #     LP_Lender_State.to_csv("LP_Lender_State.csv", index=False)
-    #     TR_Rewards_Distribution.to_csv("TR_Rewards_Distribution.csv", index=False)
-    #     MP_Asset = pd.concat([MP_Asset,nolus_price],axis=0)
-    #     MP_Asset.to_csv("MP_Asset_final.csv",index=False)
-
-    return LS_Opening, LS_Repayment, LS_Liquidation
-        #PL_Utilization,LP_Pool_Util_1,LP_Pool_Util_2,LS_Count_Open,LS_Count_Closed,LP_Count_Open,LP_Count_Closed,LS_Interest_mc,LP_Interest,TR_Rewards,LS_Repayment_mc,LP_Repayment,MC_Nolus_price
-# Press the green button in the gutter to run the script.
-
-def test(startup_args):
-    tic = time.perf_counter()
-    nolus_ini_price = pd.read_csv("MP_Asset_nolus.csv")
+    nolus_ini_price = nolus_price
     PL_Utilization = pd.DataFrame({"timestamp": nolus_ini_price["MP_timestamp"]})
     LP_Pool_Util_1 = pd.DataFrame({"timestamp": nolus_ini_price["MP_timestamp"]})
     LP_Pool_Util_2 = pd.DataFrame({"timestamp": nolus_ini_price["MP_timestamp"]})
@@ -163,31 +99,61 @@ def test(startup_args):
     LS_Repayment_mc = pd.DataFrame({"timestamp": nolus_ini_price["MP_timestamp"]})
     LP_Repayment = pd.DataFrame({"timestamp": nolus_ini_price["MP_timestamp"]})
     MC_Nolus_price = pd.DataFrame({"timestamp": nolus_ini_price["MP_timestamp"]})
-    args = startup_args
-    # simulation
-    MP_Asset, MP_Asset_State = MP_Assets_Daily(args)
-    min_timestamp = MP_Asset.loc[MP_Asset["MP_timestamp"] == min(MP_Asset["MP_timestamp"]), "MP_timestamp"][0]
-    PL_State = PL_State_ini(MP_Asset)
-    LS_Closing = LS_Closing_ini()
-    LP_Pool = LP_pool_gen(args)
-    LS_Opening = LS_Opening_Generate(MP_Asset, LP_Pool, args)
-    LP_Deposit = LP_Deposit_Generate(MP_Asset, LP_Pool, args)
-    LS_Repayment = LS_Repayment_generate(LS_Opening, LP_Pool, args)
-    LS_Liquidation = LS_Liquidation_generate(MP_Asset, LS_Opening, LS_Repayment, args)
-    LP_Withdraw, SYS_LP_Withdraw = LP_Withdraw_generate(LP_Deposit, LP_Pool, args)
-    LP_Pool_State = LP_Pool_State_gen(LP_Pool, min_timestamp, args)
-    TR_Profit = TR_Profit_ini()
-    TR_Rewards_Distribution = TR_Rewards_Distribution_ini()
-    TR_State = TR_State_ini()
-    LS_State = LS_State_ini(LS_Opening, args)
-    nolus_price = pd.read_csv(args["nls_file_name"], index_col=0)
 
-    list_of_tables = [PL_Utilization, LP_Pool_Util_1, LP_Pool_Util_2, LS_Count_Open, LS_Count_Closed, LP_Count_Open,
-                      LP_Count_Closed, LS_Interest_mc, LP_Interest, TR_Rewards, LS_Repayment_mc, LP_Repayment,
-                      MC_Nolus_price]
-    nolus_price = nolus_price.rename(columns={"MP_price_in_stable":str(args["run_number"])})
+    PL_Utilization["" + str(i) + ""] = \
+    PL_Interest[["PL_timestamp", "Util"]].groupby("PL_timestamp").mean().reset_index(drop=True)["Util"].values
+    # hardcoded .... FOR NOW
+    LP_Pool_Util_1["" + str(i) + ""] = PL_Interest.loc[PL_Interest["LP_Pool_id"] == "pid100", ["Util"]].reset_index(
+        drop=True)
+    LP_Pool_Util_2["" + str(i) + ""] = PL_Interest.loc[PL_Interest["LP_Pool_id"] == "pid101", ["Util"]].reset_index(
+        drop=True)
+
+    LS_Count_Open["" + str(i) + ""] = PL_State["PL_LS_count_open"].multiply(args["contract_weight"])
+    LS_Count_Closed["" + str(i) + ""] = PL_State["PL_LS_count_closed"].multiply(args["contract_weight"])
+    LP_Count_Open["" + str(i) + ""] = PL_State["PL_LP_count_open"].multiply(args["contract_weight"])
+    LP_Count_Closed["" + str(i) + ""] = PL_State["PL_LP_count_closed"].multiply(args["contract_weight"])
+
+    LS_Interest_mc["" + str(i) + ""] = \
+        PL_Interest[["PL_timestamp", "LS_interest"]].groupby("PL_timestamp").mean().reset_index(drop=True)[
+            "LS_interest"].values * 100  # in percents
+    LP_Interest["" + str(i) + ""] = \
+        PL_Interest[["PL_timestamp", "LP_interest"]].groupby("PL_timestamp").mean().reset_index(drop=True)[
+            "LP_interest"].values * 100  # in percents
+
+    TR_Rewards["" + str(i) + ""] = \
+        TR_Rewards_Distribution[["TR_Rewards_timestamp", "TR_Rewards_amnt_stable"]].groupby(
+            "TR_Rewards_timestamp").sum().reset_index(drop=True)["TR_Rewards_amnt_stable"].values
+
+    a = LS_Repayment[["LS_timestamp", "LS_amnt_stable"]].groupby(
+        "LS_timestamp").sum().reset_index(inplace=False)
+    a["LS_timestamp"] = a["LS_timestamp"].astype("str")
+    LS_Repayment_mc["" + str(i) + ""] = LS_Repayment_mc["timestamp"].map(dict(a[["LS_timestamp", "LS_amnt_stable"]].values)).fillna(0)
+    a = LP_Withdraw[["LP_timestamp", "LP_amnt_stable"]].groupby("LP_timestamp").sum().reset_index(inplace=False)
+    a["LP_timestamp"] = a["LP_timestamp"].astype("str")
+    LP_Repayment["" + str(i) + ""] = LP_Repayment["timestamp"].map(dict(a.values)).fillna(0)
+    MC_Nolus_price["" + str(i) + ""] = nolus_price["MP_price_in_stable"]
+    print("Process "+str(startup_args["run_number"])+" ended!")
+    if startup_args["run_number"] == 5:
+        PL_Interest.to_csv("PL_Interest.csv", index=False)
+        LS_State.to_csv("LS_State.csv", index=False)
+        LS_Opening.to_csv("LS_Opening.csv", index=False)
+        LP_Deposit.to_csv("LP_Deposit.csv", index=False)
+        SYS_LP_Withdraw.to_csv("SYS_LP_Withdraw.csv", index=False)
+        LP_Withdraw.to_csv("LP_Withdraw.csv", index=False)
+
+        LS_Repayment.to_csv("LS_Repayment.csv", index=False)
+        LS_Liquidation.to_csv("LS_Liquidation.csv", index=False)
+        LP_Pool_State.to_csv("LP_Pool_State.csv", index=False)
+        TR_Profit.to_csv("TR_Profit.csv", index=False)
+        PL_State.to_csv("PL_State.csv", index=False)
+        LS_Closing.to_csv("LS_Closing.csv", index=False)
+        TR_State.to_csv("TR_State.csv", index=False)
+        LP_Lender_State.to_csv("LP_Lender_State.csv", index=False)
+        TR_Rewards_Distribution.to_csv("TR_Rewards_Distribution.csv", index=False)
+        MP_Asset = pd.concat([MP_Asset, nolus_price], axis=0)
+        MP_Asset.to_csv("MP_Asset_final.csv", index=False)
     return PL_Utilization,LP_Pool_Util_1,LP_Pool_Util_2,LS_Count_Open,LS_Count_Closed,LP_Count_Open,LP_Count_Closed,LS_Interest_mc,LP_Interest,TR_Rewards,LS_Repayment_mc,LP_Repayment,MC_Nolus_price
-
+# Press the green button in the gutter to run the script.
 
 if __name__ == '__main__':
     #test()
@@ -330,7 +296,7 @@ if __name__ == '__main__':
                 pass
     print("MC_Processes: All processes finished!")
     toc = time.perf_counter()
-    print("Processes succesfully finished:"+process_count+"\n Time(s):"+(toc - tic) +" ")
+    print("Processes succesfully finished:"+str(process_count)+"\n Time(s):"+str(toc - tic) +" ")
 
     print("MC_Output: Processing results:")
     MC_output = pd.DataFrame({"timestamp": PL_Utilization["timestamp"]})
@@ -374,19 +340,19 @@ if __name__ == '__main__':
     MC_output["MC_Nolus_price_min"] = MC_Nolus_price.min(axis=1)
     MC_output["MC_Nolus_price_max"] = MC_Nolus_price.max(axis=1)
     print("Finalization: recording results")
-    MC_output.to_csv("MC_output.csv",index=False)
-    PL_Utilization.to_csv("PL_Utilization.csv",index=False)
-    LP_Pool_Util_1.to_csv("LP_Pool_Util_1.csv",index=False)
-    LP_Pool_Util_2.to_csv("LP_Pool_Util_2.csv",index=False)
-    LS_Count_Open.to_csv("LS_Count_Open.csv",index=False)
-    LP_Count_Open.to_csv("LP_Count_Open.csv",index=False)
-    LS_Count_Closed.to_csv("LS_Count_Closed",index=False)
-    LP_Count_Closed.to_csv("LP_Count_Closed",index=False)
-    LS_Interest_mc.to_csv("LS_Interest_mc.csv",index=False)
-    LP_Interest.to_csv("LP_Interest.csv",index=False)
-    TR_Rewards.to_csv("TR_Rewards.csv",index=False)
-    LS_Repayment_mc.to_csv("LS_Repayment_mc.csv",index=False)
-    LP_Repayment.to_csv("LP_Repayment.csv",index=False)
-    MC_Nolus_price.to_csv("MC_Nolus_price.csv",index=False)
+    MC_output.to_csv("PBI_MC/MC_Output.csv", index=False)
+    PL_Utilization.to_csv("PBI_MC/PL_Utilization.csv", index=False)
+    LP_Pool_Util_1.to_csv("PBI_MC/LP_Pool_Util_1.csv", index=False)
+    LP_Pool_Util_2.to_csv("PBI_MC/LP_Pool_Util_2.csv", index=False)
+    LS_Count_Open.to_csv("PBI_MC/LS_Count_Open.csv", index=False)
+    LP_Count_Open.to_csv("PBI_MC/LP_Count_Open.csv", index=False)
+    LS_Count_Closed.to_csv("PBI_MC/LS_Count_Closed.csv", index=False)
+    LP_Count_Closed.to_csv("PBI_MC/LP_Count_Closed.csv", index=False)
+    LS_Interest_mc.to_csv("PBI_MC/LS_Interest.csv", index=False)
+    LP_Interest.to_csv("PBI_MC/LP_Interest.csv", index=False)
+    TR_Rewards.to_csv("PBI_MC/TR_Rewards.csv", index=False)
+    LS_Repayment_mc.to_csv("PBI_MC/LS_Repayment.csv", index=False)
+    LP_Repayment.to_csv("PBI_MC/LP_Repayment.csv", index=False)
+    MC_Nolus_price.to_csv("PBI_MC/MC_Nolus_price.csv", index=False)
     print("Finalization: recording results")
 

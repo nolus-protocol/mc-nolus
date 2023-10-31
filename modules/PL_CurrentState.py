@@ -9,7 +9,7 @@ def PL_State_ini(MP_Asset):
     return  PL_State
 
 def count_in_time(timestamp,PL_State, to_count, name="count", timestamp_col_name="timestamp"):
-    count = to_count.loc[to_count[timestamp_col_name]==timestamp,timestamp_col_name].count().astype("uint64")
+    count = to_count.loc[to_count[timestamp_col_name].astype("str")==timestamp,timestamp_col_name].count().astype("uint64")
     PL_State.loc[PL_State["PL_timestamp"]==timestamp,[name]]=count
     return PL_State
 

@@ -81,97 +81,97 @@ def liq_record_creation(timestamp,contracts_to_close,LS_Liquidation,pool_id):
 
 
 #todo: change to liquidation event handler - split contracts in 2 partial liquidation and full liquidation , apply changes
-def closing_event_handler(timestamp,open_contracts,LS_State,LS_Repayment,LS_Liquidation, LS_Closing,LS_Opening,args):
-    #check if LS_amnt_stable < SYS_LS_staked_cltr_in_stable
-    timest_contracts = LS_State.loc[LS_State["LS_timestamp"] == timestamp]
-    close_cond = (timest_contracts["SYS_LS_staked_cltr_in_stable"]*args["max_cltr_percent"]/100)<(timest_contracts["LS_principal_stable"] + timest_contracts["LS_current_margin_stable"]+timest_contracts["LS_current_interest_stable"]+timest_contracts["LS_prev_margin_stable"]+timest_contracts["LS_prev_interest_stable"])
-    partial_liq_cond = (timest_contracts["SYS_LS_staked_cltr_in_stable"]*args["healthy_cltr_percent"]/100)<(timest_contracts["LS_principal_stable"] + timest_contracts["LS_current_margin_stable"]+timest_contracts["LS_current_interest_stable"]+timest_contracts["LS_prev_margin_stable"]+timest_contracts["LS_prev_interest_stable"])
-    contracts_to_close = timest_contracts.loc[close_cond]
-    contracts_to_partial_liquidate = timest_contracts.loc[partial_liq_cond]
-    contracts_to_partial_liquidate = contracts_to_partial_liquidate.loc[~contracts_to_partial_liquidate["LS_contract_id"].isin(contracts_to_close["LS_contract_id"])]
-    if contracts_to_close.empty and contracts_to_partial_liquidate.empty:
-        return open_contracts,LS_State,LS_Repayment,LS_Liquidation, LS_Closing
-
-    else:
-        if not contracts_to_close.empty:
-            rep = LS_Repayment.loc[LS_Repayment["LS_timestamp"] > timestamp]
-            contracts_to_close["LS_symbol"] = contracts_to_close["LS_contract_id"].map(dict(rep.drop_duplicates(subset="LS_contract_id",keep="last")[["LS_contract_id","LS_symbol"]].values))
-            LS_Repayment = LS_Repayment.drop(rep.loc[rep["LS_contract_id"].isin(contracts_to_close["LS_contract_id"])].index,axis=0)
-            liq = LS_Liquidation.loc[LS_Liquidation["LS_timestamp"] > timestamp]
-            LS_Liquidation = LS_Liquidation.drop(liq.loc[liq["LS_contract_id"].isin(contracts_to_close["LS_contract_id"])].index, axis=0)
-            LS_Liquidation,LS_Closing = liq_closing_record_creation(timestamp,contracts_to_close,LS_Liquidation,LS_Closing,LS_Opening,args)
-    return open_contracts,LS_State, LS_Repayment, LS_Liquidation, LS_Closing
-
-def partial_liq(timestamp,LS_State,LS_Repayment,LS_Liquidation,LS_Opening,args):
-    timest_contracts = LS_State.loc[LS_State["LS_timestamp"] == timestamp]
-    close_cond = (timest_contracts["SYS_LS_staked_cltr_in_stable"]*args["max_cltr_percent"]/100)<(timest_contracts["LS_principal_stable"] + timest_contracts["LS_current_margin_stable"]+timest_contracts["LS_current_interest_stable"]+timest_contracts["LS_prev_margin_stable"]+timest_contracts["LS_prev_interest_stable"])
-    partial_liq_cond = (timest_contracts["SYS_LS_staked_cltr_in_stable"]*args["healthy_cltr_percent"]/100)<(timest_contracts["LS_principal_stable"] + timest_contracts["LS_current_margin_stable"]+timest_contracts["LS_current_interest_stable"]+timest_contracts["LS_prev_margin_stable"]+timest_contracts["LS_prev_interest_stable"])
-    contracts_to_close = timest_contracts.loc[close_cond]
-    contracts_to_partial_liquidate = timest_contracts.loc[partial_liq_cond]
-    contracts_to_partial_liquidate = contracts_to_partial_liquidate.loc[~contracts_to_partial_liquidate["LS_contract_id"].isin(contracts_to_close["LS_contract_id"])]
-    if not contracts_to_partial_liquidate.empty:
-
-        # todo: calculate liquidation transacrions
-        # (liabilityLPN(time) - LeaseHealthyLiability% / 100 * leaseAmountLPN(time)) / (1 - LeaseHealthyLiability% / 100))
-        # current_principal_post_liquidation = current_princ_preliquidation - Borrow(time)/(Borrow(time) + Cltr(time)) * LiquidationAmountLPN
-        # current_colateral_to_liquidate = (1 - Borrow(time)/(Borrow(time) + Cltr(time))) * LiquidationAmountLPN
-        # IN CONTRACTS_TO_LIQUIDATE are left only the values for the liquidation transaction !!!
-        rep = LS_Repayment.loc[LS_Repayment["LS_timestamp"] > timestamp]
-        contracts_to_partial_liquidate["LS_symbol"] = contracts_to_partial_liquidate["LS_contract_id"].map(
-            dict(rep.drop_duplicates(subset="LS_contract_id", keep="last")[["LS_contract_id", "LS_symbol"]].values))
-        contracts_to_partial_liquidate["total_value"] = contracts_to_partial_liquidate["LS_principal_stable"] + \
-                                                        contracts_to_partial_liquidate["SYS_LS_staked_cltr_in_stable"]
-        contracts_to_partial_liquidate["liabilityLPN"] = contracts_to_partial_liquidate["LS_principal_stable"] + \
-                                                         contracts_to_partial_liquidate["LS_current_margin_stable"] + \
-                                                         contracts_to_partial_liquidate["LS_current_interest_stable"] + \
-                                                         contracts_to_partial_liquidate["LS_prev_margin_stable"] + \
-                                                         contracts_to_partial_liquidate["LS_prev_interest_stable"]
-        contracts_to_partial_liquidate["borowed_to_cltr"] = contracts_to_partial_liquidate["LS_principal_stable"] / (
-                contracts_to_partial_liquidate["LS_principal_stable"] + contracts_to_partial_liquidate[
-            "SYS_LS_staked_cltr_in_stable"])
-        # todo:post_liquidation !
-        contracts_to_partial_liquidate["post_liq_val"] = contracts_to_partial_liquidate["LS_principal_stable"] - (
-              contracts_to_partial_liquidate["LS_principal_stable"] / contracts_to_partial_liquidate[
-         "total_value"]) * ((contracts_to_partial_liquidate["liabilityLPN"] - (
-            args["healthy_cltr_percent"] / 100) * contracts_to_partial_liquidate["LS_principal_stable"]) / (
-                                  1 - args["healthy_cltr_percent"] / 100))
-        contracts_to_partial_liquidate["post_to_pre"] = contracts_to_partial_liquidate["post_liq_val"] / \
-                                                        contracts_to_partial_liquidate["LS_principal_stable"]
-        contracts_to_partial_liquidate["SYS_LS_staked_cltr_in_stable_left"] = (1 - contracts_to_partial_liquidate[
-            "borowed_to_cltr"]) * contracts_to_partial_liquidate["post_to_pre"] * contracts_to_partial_liquidate[
-                                                                                  "SYS_LS_staked_cltr_in_stable"]
-        contracts_to_partial_liquidate["SYS_LS_staked_cltr_in_stable"] = contracts_to_partial_liquidate[
-                                                                             "SYS_LS_staked_cltr_in_stable"] - \
-                                                                         contracts_to_partial_liquidate[
-                                                                             "SYS_LS_staked_cltr_in_stable_left"]
-        contracts_to_partial_liquidate["LS_principal_stable_left"] = contracts_to_partial_liquidate["borowed_to_cltr"] * \
-                                                                     contracts_to_partial_liquidate["post_to_pre"] * \
-                                                                     contracts_to_partial_liquidate[
-                                                                         "LS_principal_stable"]
-        contracts_to_partial_liquidate["LS_principal_stable"] = contracts_to_partial_liquidate["LS_principal_stable"] - \
-                                                                contracts_to_partial_liquidate[
-                                                                    "LS_principal_stable_left"]
-        contracts_to_partial_liquidate["coef"] = contracts_to_partial_liquidate["borowed_to_cltr"] * \
-                                                 contracts_to_partial_liquidate["post_to_pre"]
-        LS_Repayment["SYS_LS_coef"] = LS_Repayment["LS_contract_id"].map(
-            dict(contracts_to_partial_liquidate[["LS_contract_id", "coef"]].values))
-        LS_Repayment.loc[LS_Repayment["LS_contract_id"].isin(
-            contracts_to_partial_liquidate["LS_contract_id"]), "LS_principal_stable"] = LS_Repayment.loc[LS_Repayment[
-                                                                                                             "LS_contract_id"].isin(
-            contracts_to_partial_liquidate["LS_contract_id"]), "LS_principal_stable"] * LS_Repayment.loc[LS_Repayment[
-                                                                                                             "LS_contract_id"].isin(
-            contracts_to_partial_liquidate["LS_contract_id"]), "SYS_LS_coef"]
-        # liquidation transaction :
-        LS_Liquidation = liq_transaction_creation(timestamp, contracts_to_partial_liquidate, LS_Liquidation, LS_Opening,
-                                                  args)
-        # fix contracts for ls_event_handler
-        contracts_to_partial_liquidate["LS_principal_stable"] = contracts_to_partial_liquidate[
-            "LS_principal_stable_left"]
-        contracts_to_partial_liquidate["SYS_LS_staked_cltr_in_stable"] = contracts_to_partial_liquidate[
-            "SYS_LS_staked_cltr_in_stable_left"]
-        LS_State = LS_State.drop(LS_State.loc[LS_State["LS_contract_id"].isin(contracts_to_partial_liquidate["LS_contract_id"])].index,axis=0)
-        LS_State = pd.concat((LS_State,contracts_to_partial_liquidate),axis=0)
-    return LS_State,LS_Repayment,LS_Liquidation
+# def closing_event_handler(timestamp,open_contracts,LS_State,LS_Repayment,LS_Liquidation, LS_Closing,LS_Opening,args):
+#     #check if LS_amnt_stable < SYS_LS_staked_cltr_in_stable
+#     timest_contracts = LS_State.loc[LS_State["LS_timestamp"] == timestamp]
+#     close_cond = (timest_contracts["SYS_LS_staked_cltr_in_stable"]*args["max_cltr_percent"]/100)<(timest_contracts["LS_principal_stable"] + timest_contracts["LS_current_margin_stable"]+timest_contracts["LS_current_interest_stable"]+timest_contracts["LS_prev_margin_stable"]+timest_contracts["LS_prev_interest_stable"])
+#     partial_liq_cond = (timest_contracts["SYS_LS_staked_cltr_in_stable"]*args["healthy_cltr_percent"]/100)<(timest_contracts["LS_principal_stable"] + timest_contracts["LS_current_margin_stable"]+timest_contracts["LS_current_interest_stable"]+timest_contracts["LS_prev_margin_stable"]+timest_contracts["LS_prev_interest_stable"])
+#     contracts_to_close = timest_contracts.loc[close_cond]
+#     contracts_to_partial_liquidate = timest_contracts.loc[partial_liq_cond]
+#     contracts_to_partial_liquidate = contracts_to_partial_liquidate.loc[~contracts_to_partial_liquidate["LS_contract_id"].isin(contracts_to_close["LS_contract_id"])]
+#     if contracts_to_close.empty and contracts_to_partial_liquidate.empty:
+#         return open_contracts,LS_State,LS_Repayment,LS_Liquidation, LS_Closing
+#
+#     else:
+#         if not contracts_to_close.empty:
+#             rep = LS_Repayment.loc[LS_Repayment["LS_timestamp"] > timestamp]
+#             contracts_to_close["LS_symbol"] = contracts_to_close["LS_contract_id"].map(dict(rep.drop_duplicates(subset="LS_contract_id",keep="last")[["LS_contract_id","LS_symbol"]].values))
+#             LS_Repayment = LS_Repayment.drop(rep.loc[rep["LS_contract_id"].isin(contracts_to_close["LS_contract_id"])].index,axis=0)
+#             liq = LS_Liquidation.loc[LS_Liquidation["LS_timestamp"] > timestamp]
+#             LS_Liquidation = LS_Liquidation.drop(liq.loc[liq["LS_contract_id"].isin(contracts_to_close["LS_contract_id"])].index, axis=0)
+#             LS_Liquidation,LS_Closing = liq_closing_record_creation(timestamp,contracts_to_close,LS_Liquidation,LS_Closing,LS_Opening,args)
+#     return open_contracts,LS_State, LS_Repayment, LS_Liquidation, LS_Closing
+#
+# def partial_liq(timestamp,LS_State,LS_Repayment,LS_Liquidation,LS_Opening,args):
+#     timest_contracts = LS_State.loc[LS_State["LS_timestamp"] == timestamp]
+#     close_cond = (timest_contracts["SYS_LS_staked_cltr_in_stable"]*args["max_cltr_percent"]/100)<(timest_contracts["LS_principal_stable"] + timest_contracts["LS_current_margin_stable"]+timest_contracts["LS_current_interest_stable"]+timest_contracts["LS_prev_margin_stable"]+timest_contracts["LS_prev_interest_stable"])
+#     partial_liq_cond = (timest_contracts["SYS_LS_staked_cltr_in_stable"]*args["healthy_cltr_percent"]/100)<(timest_contracts["LS_principal_stable"] + timest_contracts["LS_current_margin_stable"]+timest_contracts["LS_current_interest_stable"]+timest_contracts["LS_prev_margin_stable"]+timest_contracts["LS_prev_interest_stable"])
+#     contracts_to_close = timest_contracts.loc[close_cond]
+#     contracts_to_partial_liquidate = timest_contracts.loc[partial_liq_cond]
+#     contracts_to_partial_liquidate = contracts_to_partial_liquidate.loc[~contracts_to_partial_liquidate["LS_contract_id"].isin(contracts_to_close["LS_contract_id"])]
+#     if not contracts_to_partial_liquidate.empty:
+#
+#         # todo: calculate liquidation transacrions
+#         # (liabilityLPN(time) - LeaseHealthyLiability% / 100 * leaseAmountLPN(time)) / (1 - LeaseHealthyLiability% / 100))
+#         # current_principal_post_liquidation = current_princ_preliquidation - Borrow(time)/(Borrow(time) + Cltr(time)) * LiquidationAmountLPN
+#         # current_colateral_to_liquidate = (1 - Borrow(time)/(Borrow(time) + Cltr(time))) * LiquidationAmountLPN
+#         # IN CONTRACTS_TO_LIQUIDATE are left only the values for the liquidation transaction !!!
+#         rep = LS_Repayment.loc[LS_Repayment["LS_timestamp"] > timestamp]
+#         contracts_to_partial_liquidate["LS_symbol"] = contracts_to_partial_liquidate["LS_contract_id"].map(
+#             dict(rep.drop_duplicates(subset="LS_contract_id", keep="last")[["LS_contract_id", "LS_symbol"]].values))
+#         contracts_to_partial_liquidate["total_value"] = contracts_to_partial_liquidate["LS_principal_stable"] + \
+#                                                         contracts_to_partial_liquidate["SYS_LS_staked_cltr_in_stable"]
+#         contracts_to_partial_liquidate["liabilityLPN"] = contracts_to_partial_liquidate["LS_principal_stable"] + \
+#                                                          contracts_to_partial_liquidate["LS_current_margin_stable"] + \
+#                                                          contracts_to_partial_liquidate["LS_current_interest_stable"] + \
+#                                                          contracts_to_partial_liquidate["LS_prev_margin_stable"] + \
+#                                                          contracts_to_partial_liquidate["LS_prev_interest_stable"]
+#         contracts_to_partial_liquidate["borowed_to_cltr"] = contracts_to_partial_liquidate["LS_principal_stable"] / (
+#                 contracts_to_partial_liquidate["LS_principal_stable"] + contracts_to_partial_liquidate[
+#             "SYS_LS_staked_cltr_in_stable"])
+#         # todo:post_liquidation !
+#         contracts_to_partial_liquidate["post_liq_val"] = contracts_to_partial_liquidate["LS_principal_stable"] - (
+#               contracts_to_partial_liquidate["LS_principal_stable"] / contracts_to_partial_liquidate[
+#          "total_value"]) * ((contracts_to_partial_liquidate["liabilityLPN"] - (
+#             args["healthy_cltr_percent"] / 100) * contracts_to_partial_liquidate["LS_principal_stable"]) / (
+#                                   1 - args["healthy_cltr_percent"] / 100))
+#         contracts_to_partial_liquidate["post_to_pre"] = contracts_to_partial_liquidate["post_liq_val"] / \
+#                                                         contracts_to_partial_liquidate["LS_principal_stable"]
+#         contracts_to_partial_liquidate["SYS_LS_staked_cltr_in_stable_left"] = (1 - contracts_to_partial_liquidate[
+#             "borowed_to_cltr"]) * contracts_to_partial_liquidate["post_to_pre"] * contracts_to_partial_liquidate[
+#                                                                                   "SYS_LS_staked_cltr_in_stable"]
+#         contracts_to_partial_liquidate["SYS_LS_staked_cltr_in_stable"] = contracts_to_partial_liquidate[
+#                                                                              "SYS_LS_staked_cltr_in_stable"] - \
+#                                                                          contracts_to_partial_liquidate[
+#                                                                              "SYS_LS_staked_cltr_in_stable_left"]
+#         contracts_to_partial_liquidate["LS_principal_stable_left"] = contracts_to_partial_liquidate["borowed_to_cltr"] * \
+#                                                                      contracts_to_partial_liquidate["post_to_pre"] * \
+#                                                                      contracts_to_partial_liquidate[
+#                                                                          "LS_principal_stable"]
+#         contracts_to_partial_liquidate["LS_principal_stable"] = contracts_to_partial_liquidate["LS_principal_stable"] - \
+#                                                                 contracts_to_partial_liquidate[
+#                                                                     "LS_principal_stable_left"]
+#         contracts_to_partial_liquidate["coef"] = contracts_to_partial_liquidate["borowed_to_cltr"] * \
+#                                                  contracts_to_partial_liquidate["post_to_pre"]
+#         LS_Repayment["SYS_LS_coef"] = LS_Repayment["LS_contract_id"].map(
+#             dict(contracts_to_partial_liquidate[["LS_contract_id", "coef"]].values))
+#         LS_Repayment.loc[LS_Repayment["LS_contract_id"].isin(
+#             contracts_to_partial_liquidate["LS_contract_id"]), "LS_principal_stable"] = LS_Repayment.loc[LS_Repayment[
+#                                                                                                              "LS_contract_id"].isin(
+#             contracts_to_partial_liquidate["LS_contract_id"]), "LS_principal_stable"] * LS_Repayment.loc[LS_Repayment[
+#                                                                                                              "LS_contract_id"].isin(
+#             contracts_to_partial_liquidate["LS_contract_id"]), "SYS_LS_coef"]
+#         # liquidation transaction :
+#         LS_Liquidation = liq_transaction_creation(timestamp, contracts_to_partial_liquidate, LS_Liquidation, LS_Opening,
+#                                                   args)
+#         # fix contracts for ls_event_handler
+#         contracts_to_partial_liquidate["LS_principal_stable"] = contracts_to_partial_liquidate[
+#             "LS_principal_stable_left"]
+#         contracts_to_partial_liquidate["SYS_LS_staked_cltr_in_stable"] = contracts_to_partial_liquidate[
+#             "SYS_LS_staked_cltr_in_stable_left"]
+#         LS_State = LS_State.drop(LS_State.loc[LS_State["LS_contract_id"].isin(contracts_to_partial_liquidate["LS_contract_id"])].index,axis=0)
+#         LS_State = pd.concat((LS_State,contracts_to_partial_liquidate),axis=0)
+#     return LS_State,LS_Repayment,LS_Liquidation
 
 
 def lss_timestamp(LS_Opening, args):

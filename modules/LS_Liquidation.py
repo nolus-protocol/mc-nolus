@@ -20,4 +20,6 @@ def LS_Liquidation_generate(MP_Asset,LS_Opening,LS_Repayment,args):#WRONG form i
     LS_Liquidation["LS_current_interest_stable"] = 0
     LS_Liquidation["LS_prev_interest_stable"] = 0
     LS_Liquidation["LS_prev_margin_stable"] = 0
+
+
     return LS_Liquidation

@@ -121,15 +121,15 @@ def f_dist(df_num, df_den, min_val, max_val, length, args, multiply=1):
     args["seed"] = args["seed"] + 1
 
     if args["method"] == 'large_sample':
-        np_arr = np.random.f(df_num, df_den, size=length * 3)
+        np_arr = np.random.f(df_num, df_den, size=length)*multiply
         np_arr = np.delete(np_arr, np.argwhere(np_arr < min_val))
         np_arr = np.delete(np_arr, np.argwhere(np_arr > max_val))
         while len(np_arr) < length:
             np.random.seed(args["seed"])
             args["seed"] = args["seed"] + 1
-            np_arr_2 = np.random.f(df_num, df_den, size=length * 3)
-            np_arr_2 = np.delete(np_arr_2, np.argwhere(np_arr < min_val))
-            np_arr_2 = np.delete(np_arr_2, np.argwhere(np_arr > max_val))
+            np_arr_2 = np.random.f(df_num, df_den, size=length)*multiply
+            np_arr_2 = np.delete(np_arr_2, np.argwhere(np_arr_2 < min_val))
+            np_arr_2 = np.delete(np_arr_2, np.argwhere(np_arr_2 > max_val))
 
             np_arr = np.concatenate((np_arr, np_arr_2), axis=None)
         if len(np_arr) > length:

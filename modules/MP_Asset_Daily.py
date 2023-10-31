@@ -8,15 +8,26 @@ import time
 def MP_Assets_Download(args):
     mp_all = pd.DataFrame()
     assets = args["Active_Assets"]
-    days = args["N"] + 10
+    #days = args["N"] + 10
     for ids in assets:
-        time.sleep(10)
-        df_1 = requests.get('https://api.coingecko.com/api/v3/coins/' + ids + '/market_chart',
+        time.sleep(60)
+        try:
+            df_1 = requests.get('https://api.coingecko.com/api/v3/coins/' + ids + '/market_chart',
                             params={"vs_currency": "usd", "days": "max", "interval": "daily"})
-        df_2 = requests.get('https://api.coingecko.com/api/v3/coins/' + ids + '/ohlc',
+            df_2 = requests.get('https://api.coingecko.com/api/v3/coins/' + ids + '/ohlc',
                             params={"vs_currency": "usd", "days": "max"})
-        df_1 = pd.DataFrame.from_dict(df_1.json())
-        df_2 = pd.DataFrame.from_dict(df_2.json())
+            print(ids)
+            df_1 = pd.DataFrame.from_dict(df_1.json())
+            df_2 = pd.DataFrame.from_dict(df_2.json())
+        except:
+            time.sleep(30)
+            df_1 = requests.get('https://api.coingecko.com/api/v3/coins/' + ids + '/market_chart',
+                                params={"vs_currency": "usd", "days": "max", "interval": "daily"})
+            df_2 = requests.get('https://api.coingecko.com/api/v3/coins/' + ids + '/ohlc',
+                                params={"vs_currency": "usd", "days": "max"})
+            print(ids)
+            df_1 = pd.DataFrame.from_dict(df_1.json())
+            df_2 = pd.DataFrame.from_dict(df_2.json())
         # prepare p1 of the main dataframe
         df_1[["MP_timestamp", "MP_price_in_stable"]] = df_1["prices"].tolist()
         df_1[["timestampmc", "MP_marketcap"]] = df_1["market_caps"].tolist()
@@ -35,7 +46,7 @@ def MP_Assets_Download(args):
         df_all["MP_timestamp"] = df_all["MP_timestamp"].apply(lambda x: x / 1000)
         df_all["MP_timestamp"] = df_all["MP_timestamp"].apply(datetime.date.fromtimestamp)
         # cut last x days
-        df_all = df_all[-days:-1]
+        #df_all = df_all[-days:-1]
         mp_all = mp_all.append(df_all, ignore_index="True", verify_integrity="True")
     MP_Asset_State = mp_all[
         ["MP_asset_symbol", "MP_timestamp", "MP_price_open", "MP_price_high", "MP_price_low", "MP_price_close",
@@ -57,6 +68,21 @@ def MP_Assets_Daily(args):
             MP_Asset = pd.read_csv(outfile, index_col=0)
     except:
         MP_Asset, MP_Asset_State = MP_Assets_Download(args)
+    #todo: start_date/ end_date measuring
+    start_date = datetime.datetime.strptime(args["market_start_date"], '%Y-%m-%d')
+    end_date = start_date + datetime.timedelta(days=args["N"])
+    start_date = args["market_start_date"]
+    end_date = end_date.strftime("%Y-%m-%d")
+    MP_Asset["MP_timestamp"] = MP_Asset["MP_timestamp"].astype("str")
+    MP_Asset_State["MP_timestamp"] = MP_Asset_State["MP_timestamp"].astype("str")
+    MP_Asset = MP_Asset[MP_Asset["MP_timestamp"]>=start_date]
+    MP_Asset = MP_Asset[MP_Asset["MP_timestamp"]<=end_date]
+    MP_Asset_State = MP_Asset_State[MP_Asset_State["MP_timestamp"]>=start_date]
+    MP_Asset_State = MP_Asset_State[MP_Asset_State["MP_timestamp"]<=end_date]
+    market_condition = MP_Asset.groupby("MP_timestamp").mean().reset_index()
+    market_condition["MP_asset_symbol"] = args["nolus_token_symbol"]
+    market_condition["MP_price_in_stable"] = market_condition["MP_price_in_stable"]/market_condition["MP_price_in_stable"].iloc[0]*args["nolus_token_price_ini"]
+    MP_Asset = pd.concat([MP_Asset,market_condition],axis=0)
 
     max_timestamp = MP_Asset.drop_duplicates(subset="MP_asset_symbol", keep="last").min()
     #print(max_timestamp)
@@ -69,7 +95,9 @@ def MP_Assets_Daily(args):
     timestamps = timestamps["MP_timestamp"].values
     timestamps = timestamps[-args["N"]:]
     MP_Asset_new = pd.DataFrame()
-    for asset in args["Active_Assets"]:
+    active_assets = [asset for asset in args["Active_Assets"]]
+    active_assets.append(args["nolus_token_symbol"])
+    for asset in active_assets :
         #todo: to be made mp_asset_state values
         vals = pd.DataFrame({"MP_asset_symbol":np.repeat(asset,len(timestamps)),"MP_timestamp":timestamps})
         vals = pd.merge(vals,MP_Asset, on=["MP_asset_symbol","MP_timestamp"],how='left')
@@ -97,9 +125,7 @@ def MP_Assets_Daily(args):
 
     MP_Asset_State[["MP_price_open", "MP_price_high", "MP_price_low", "MP_price_close",
                     "MP_volume", "MP_marketcap"]].multiply(MP_Asset_State["price_in_stable_date"], axis="index")
-
     MP_Asset_State = MP_Asset_State.drop(["price_in_stable_date"], axis=1)
-
     MP_Asset_State = pd.concat([MP_Asset_State, not_transforming], ignore_index=True)
 
     # convert all prices to int
@@ -119,6 +145,7 @@ def MP_Assets_Daily(args):
     # MP_Asset = MP_Asset.drop(["digit"], axis=1)
     #
     # MP_Asset_State[["MP_volume", "MP_marketcap"]] = MP_Asset_State[["MP_volume", "MP_marketcap"]].astype("uint64")
+
     MP_Asset.to_csv("MP_ASSET.csv")
     MP_Asset_State.to_csv("MP_ASSET_STATE.csv")
     return MP_Asset, MP_Asset_State
